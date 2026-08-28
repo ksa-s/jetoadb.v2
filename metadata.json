@@ -1,0 +1,6 @@
+{
+  "name": "Sam Software - Car ADB Manager",
+  "description": "أداة ويب احترافية لإدارة شاشات وكمبيوتر السيارات عبر ADB وWebUSB وتثبيت التطبيقات وحل مشكلة Socket open failed",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
