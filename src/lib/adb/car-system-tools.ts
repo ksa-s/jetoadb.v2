@@ -152,22 +152,44 @@ export class CarSystemTools {
   }
 
   /**
-   * Takes screenshot from device
+   * Takes screenshot from device using standard shell and sync
    */
   public static async captureScreenshot(adb: Adb): Promise<Blob> {
+    const tempFile = `/sdcard/sam_screenshot_${Date.now()}.png`;
     try {
-      const socket = await adb.createSocket('exec:screencap -p');
-      const reader = socket.readable.getReader();
-      const chunks: Uint8Array[] = [];
+      // Step 1: Capture screenshot to temp file on car head unit
+      await this.exec(adb, `screencap -p "${tempFile}"`);
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
+      // Step 2: Read image via ADB sync
+      const sync = await adb.sync();
+      const chunks: Uint8Array[] = [];
+      try {
+        const stream = sync.read(tempFile);
+        const reader = stream.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) chunks.push(value);
+        }
+      } finally {
+        await sync.dispose();
+      }
+
+      // Step 3: Delete temp file
+      try {
+        await this.exec(adb, `rm -f "${tempFile}"`);
+      } catch {}
+
+      if (chunks.length === 0) {
+        throw new Error('لم يتم استلام أي بيانات للصورة.');
       }
 
       return new Blob(chunks, { type: 'image/png' });
     } catch (e: any) {
+      // Clean up in case of error
+      try {
+        await this.exec(adb, `rm -f "${tempFile}"`);
+      } catch {}
       throw new Error(`تعذر التقاط لقطة الشاشة: ${e.message || e}`);
     }
   }

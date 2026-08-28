@@ -184,10 +184,10 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
             onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
           >
-            <option value="auto">تلقائي ذكي (Auto Adaptive - ينصح به للشاشات)</option>
-            <option value="stream">بث مباشر فوري (Direct Stream - يتجاوز مجلد tmp)</option>
-            <option value="session">جلسة الحزم (Package Session - للملفات الكبيرة +70MB)</option>
-            <option value="sdcard">عبر الذاكرة العامة (SDCard Download Storage)</option>
+            <option value="auto">تلقائي ذكي (ADB Sync + PM Install - ينصح به لشاشات السيارات)</option>
+            <option value="sdcard">مزامنة الذاكرة (ADB Sync Storage - حل أخطاء Socket open failed)</option>
+            <option value="session">مدير حزم النظام (PackageManager Stream)</option>
+            <option value="stream">بث Shell المباشر (Direct Stream Shell)</option>
           </select>
         </div>
 
@@ -280,13 +280,13 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
 
                   {item.status === 'error' && (
                     <button
-                      onClick={() => onInstallSingle(item, 'session')}
+                      onClick={() => onInstallSingle(item, 'sdcard')}
                       disabled={isInstalling || !isConnected}
                       className="text-[11px] font-semibold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                      title="إعادة التثبيت باستخدام طريقة جلسة التثبيت"
+                      title="إعادة التثبيت باستخدام بروتوكول ADB Sync المباشر"
                     >
                       <RotateCw className="w-3 h-3" />
-                      <span>إعادة محاولة (طريقة بديلة)</span>
+                      <span>إعادة المحاولة (ADB Sync)</span>
                     </button>
                   )}
 
