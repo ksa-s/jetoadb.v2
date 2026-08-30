@@ -184,16 +184,16 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
             onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
           >
-            <option value="auto">تلقائي ذكي (ADB Sync + PM Install - ينصح به لشاشات السيارات)</option>
-            <option value="sdcard">مزامنة الذاكرة (ADB Sync Storage - حل أخطاء Socket open failed)</option>
-            <option value="session">مدير حزم النظام (PackageManager Stream)</option>
-            <option value="stream">بث Shell المباشر (Direct Stream Shell)</option>
+            <option value="auto">طريقة 4PDA لشاشات السيارات (ADB Sync + Cat PM Pipe - موصى به لـ Jetour / Haval / Geely)</option>
+            <option value="sdcard">مزامنة الذاكرة والأنبوب المباشر (4PDA Stream Pipe)</option>
+            <option value="stream">بث Shell المباشر (Direct PM Stream - بدون ذاكرة تخزين)</option>
+            <option value="session">مدير حزم أندرويد القياسي (PackageManager Stream)</option>
           </select>
         </div>
 
         <div className="flex items-center gap-2 text-[11px] text-slate-400">
           <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-            ✓ يتجاوز مجلد /data/local/tmp المقفل
+            ✓ يتجاوز قيود SELinux و /data/local/tmp المقفل
           </span>
         </div>
       </div>

@@ -373,6 +373,83 @@ export class CarSystemTools {
     }
   }
 
+  /**
+   * 4PDA Russian Forum Fix: Full permission set for MacroDroid (Steering wheel controls, music switching, T2/Desay SV)
+   */
+  public static async apply4PdaMacroDroidFix(adb: Adb): Promise<string[]> {
+    const logs: string[] = [];
+    const pkg = 'com.arlosoft.macrodroid';
+    const commands = [
+      { cmd: `pm grant ${pkg} android.permission.CHANGE_CONFIGURATION`, desc: 'تغيير إعدادات الواجهة (CHANGE_CONFIGURATION)' },
+      { cmd: `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`, desc: 'تعديل إعدادات النظام الآمنة (WRITE_SECURE_SETTINGS)' },
+      { cmd: `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW`, desc: 'الظهور فوق الشاشة (SYSTEM_ALERT_WINDOW)' },
+      { cmd: `pm grant ${pkg} android.permission.READ_LOGS`, desc: 'قراءة سجلات أزرار المقود LogCat (READ_LOGS)' },
+      { cmd: `appops set ${pkg} SYSTEM_ALERT_WINDOW allow`, desc: 'تصريح AppOps للنوافذ العائمة' },
+      { cmd: `dumpsys deviceidle whitelist +${pkg}`, desc: 'استثناء من توفير الطاقة وإبقاء الخدمة نشطة بالخلفية' },
+    ];
+
+    for (const item of commands) {
+      try {
+        await this.exec(adb, item.cmd);
+        logs.push(`✓ ${item.desc}`);
+      } catch (e: any) {
+        logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
+      }
+    }
+    return logs;
+  }
+
+  /**
+   * 4PDA Russian Forum Fix: Permissions for RuStore & App Stores (Install unknown apps + Overlays)
+   */
+  public static async apply4PdaStoreFix(adb: Adb, packageName = 'ru.vk.store'): Promise<string[]> {
+    const logs: string[] = [];
+    const commands = [
+      { cmd: `pm grant ${packageName} android.permission.REQUEST_INSTALL_PACKAGES`, desc: 'صلاحية تثبيت التطبيقات (REQUEST_INSTALL_PACKAGES)' },
+      { cmd: `pm grant ${packageName} android.permission.SYSTEM_ALERT_WINDOW`, desc: 'صلاحية النوافذ المنبثقة (SYSTEM_ALERT_WINDOW)' },
+      { cmd: `appops set ${packageName} REQUEST_INSTALL_PACKAGES allow`, desc: 'تفعيل AppOps لتثبيت الحزم' },
+      { cmd: `appops set ${packageName} SYSTEM_ALERT_WINDOW allow`, desc: 'تفعيل AppOps للظهور فوق التطبيقات' },
+      { cmd: `dumpsys deviceidle whitelist +${packageName}`, desc: 'استثناء المتجر من توفير الطاقة' },
+    ];
+
+    for (const item of commands) {
+      try {
+        await this.exec(adb, item.cmd);
+        logs.push(`✓ ${item.desc}`);
+      } catch (e: any) {
+        logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
+      }
+    }
+    return logs;
+  }
+
+  /**
+   * 4PDA Russian Forum Fix: Permissions for Yandex Navi & Music (GPS, overlay, battery)
+   */
+  public static async apply4PdaYandexFix(adb: Adb): Promise<string[]> {
+    const logs: string[] = [];
+    const packages = ['ru.yandex.yandexnavi', 'ru.yandex.music'];
+
+    for (const pkg of packages) {
+      const commands = [
+        { cmd: `pm grant ${pkg} android.permission.ACCESS_FINE_LOCATION`, desc: `صلاحية الـ GPS الدقيق لـ ${pkg}` },
+        { cmd: `pm grant ${pkg} android.permission.ACCESS_COARSE_LOCATION`, desc: `صلاحية تحديد الموقع لـ ${pkg}` },
+        { cmd: `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW`, desc: `الظهور فوق الخرائط لـ ${pkg}` },
+        { cmd: `dumpsys deviceidle whitelist +${pkg}`, desc: `استثناء من توفير الطاقة لـ ${pkg}` },
+      ];
+
+      for (const item of commands) {
+        try {
+          await this.exec(adb, item.cmd);
+          logs.push(`✓ ${item.desc}`);
+        } catch (e: any) {
+          logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
+        }
+      }
+    }
+    return logs;
+  }
+
   private static async exec(adb: Adb, command: string): Promise<string> {
     try {
       const socket = await adb.createSocket(`shell:${command}`);
