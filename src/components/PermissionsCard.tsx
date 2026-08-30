@@ -599,24 +599,28 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
         </div>
 
         {/* Interactive Steering Wheel Key Tester */}
-        <div className="pt-2 border-t border-slate-800/80">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+        <div className="pt-2.5 border-t border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-2">
+            <span className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
               <Tv className="w-3.5 h-3.5 text-cyan-400" />
               أداة اختبار ومحاكاة أزرار الدركسون والميديا:
             </span>
-            <span className="text-[10px] text-slate-500">اضغط لتجربة استجابة شاشة السيارة فورياً</span>
+            <span className="text-[10px] text-cyan-400/90 font-medium">
+              💡 أزرار (التالي/السابق/تشغيل) ترسل أوامر MediaSession + Intents لمشغل الموسيقى النشط
+            </span>
           </div>
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-10 gap-1.5">
             {[
-              { id: 'next', label: 'التالي ⏭️' },
-              { id: 'prev', label: 'السابق ⏮️' },
-              { id: 'play_pause', label: 'تشغيل ⏯️' },
-              { id: 'vol_up', label: 'صوت + 🔊' },
-              { id: 'vol_down', label: 'صوت - 🔉' },
-              { id: 'voice', label: 'مساعد 🎙️' },
-              { id: 'home', label: 'رئيسية 🏠' },
-              { id: 'back', label: 'رجوع 🔙' },
+              { id: 'next', label: 'التالي ⏭️', desc: 'Next Track' },
+              { id: 'prev', label: 'السابق ⏮️', desc: 'Previous Track' },
+              { id: 'play_pause', label: 'تشغيل ⏯️', desc: 'Play / Pause' },
+              { id: 'vol_up', label: 'صوت + 🔊', desc: 'Vol Up' },
+              { id: 'vol_down', label: 'صوت - 🔉', desc: 'Vol Down' },
+              { id: 'mute', label: 'كتم 🔇', desc: 'Mute' },
+              { id: 'voice', label: 'مساعد 🎙️', desc: 'Voice Assist' },
+              { id: 'call', label: 'اتصال 📞', desc: 'Call' },
+              { id: 'home', label: 'رئيسية 🏠', desc: 'Home' },
+              { id: 'back', label: 'رجوع 🔙', desc: 'Back' },
             ].map((k) => (
               <button
                 key={k.id}
@@ -625,13 +629,14 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
                   if (!adb) return;
                   try {
                     const res = await CarSystemTools.sendMediaKey(adb, k.id as any);
-                    onLog(res, 'info');
+                    onLog(res, 'success');
                   } catch (e: any) {
                     onLog(`فشل إرسال الزر: ${e.message || e}`, 'error');
                   }
                 }}
                 disabled={!isConnected}
-                className="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-cyan-500/50 text-[11px] font-medium text-slate-200 text-center transition-colors cursor-pointer disabled:opacity-50"
+                title={k.desc}
+                className="px-2 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/70 hover:border-cyan-500/50 text-[11px] font-semibold text-slate-100 text-center transition-all cursor-pointer disabled:opacity-40 shadow-sm active:scale-95"
               >
                 {k.label}
               </button>

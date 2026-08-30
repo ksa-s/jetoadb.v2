@@ -1,6 +1,5 @@
 import { Adb } from '@yume-chan/adb';
 import { WrapReadableStream, TransformStream } from '@yume-chan/stream-extra';
-import { PackageManager } from '@yume-chan/android-bin';
 import { InstallMethod } from '../../types';
 
 export interface InstallProgressCallback {
@@ -23,8 +22,8 @@ export class ApkInstaller {
 
     onLog?.(`بدء تثبيت التطبيق: ${fileName} (${(fileSize / (1024 * 1024)).toFixed(1)} MB)...`, 'info');
 
-    // Method 1: Explicit Storage Push & Pipe
-    if (preferredMethod === 'sdcard' || preferredMethod === 'sync_tmp') {
+    // Method 1: Explicit Storage Push & Direct Package Install
+    if (preferredMethod === 'sdcard' || preferredMethod === 'sync_tmp' || preferredMethod === 'auto') {
       const res = await this.installViaStoragePipe(adb, file, onProgress, onLog);
       return { ...res, methodUsed: 'sdcard' };
     }
@@ -35,7 +34,7 @@ export class ApkInstaller {
         const res = await this.installViaDirectStream(adb, file, onProgress, onLog);
         return { ...res, methodUsed: 'stream' };
       } catch (err: any) {
-        onLog?.(`فشل البث المباشر (${err.message || err}). جاري التبديل إلى طريقة النقل والتثبيت المباشر...`, 'warning');
+        onLog?.(`تعذر البث المباشر (${err.message || err}). جاري التبديل إلى التثبيت المباشر عبر التخزين...`, 'warning');
         const fallbackRes = await this.installViaStoragePipe(adb, file, onProgress, onLog);
         return { ...fallbackRes, methodUsed: 'sdcard' };
       }
@@ -44,66 +43,26 @@ export class ApkInstaller {
     // Method 3: Session
     if (preferredMethod === 'session') {
       try {
-        const res = await this.installViaPackageManager(adb, file, onProgress, onLog);
+        const res = await this.installViaStoragePipe(adb, file, onProgress, onLog);
         return { ...res, methodUsed: 'session' };
       } catch (err: any) {
-        onLog?.(`فشلت جلسة التثبيت (${err.message || err}). جاري التبديل إلى طريقة التثبيت الذكية...`, 'warning');
-        const fallbackRes = await this.installViaStoragePipe(adb, file, onProgress, onLog);
-        return { ...fallbackRes, methodUsed: 'sdcard' };
+        onLog?.(`فشلت جلسة التثبيت (${err.message || err})...`, 'warning');
+        throw err;
       }
     }
 
-    // Auto Mode (The Universal Automotive Formula):
-    // 1. Primary: Storage Push + Pipe / Direct Install
-    // 2. Secondary: Direct Stream via exec:cmd package install / exec:pm install
-    // 3. Fallback: PackageManager
-    // 4. Fallback: Interactive Car UI Trigger
-    onLog?.('الوضع التلقائي الذكي لشاشات السيارات: تجهيز المسار ونقل الحزمة وتثبيتها عبر الأنابيب...', 'info');
-
-    try {
-      const res = await this.installViaStoragePipe(adb, file, onProgress, onLog);
-      if (res.success) {
-        return { ...res, methodUsed: 'sdcard' };
-      }
-      onLog?.(`تنبيه: محاولة التثبيت الأولى (${res.message}). جاري تجربة البث المباشر البديل...`, 'warning');
-    } catch (err: any) {
-      onLog?.(`تنبيه: ${err.message || err}. جاري تجربة الطريقة البديلة للبث المباشر...`, 'warning');
-    }
-
-    // Attempt 2: Direct Binary Stream
-    try {
-      const res = await this.installViaDirectStream(adb, file, onProgress, onLog);
-      if (res.success) {
-        return { ...res, methodUsed: 'stream' };
-      }
-      onLog?.(`تنبيه: فشل البث المباشر (${res.message})...`, 'warning');
-    } catch (err: any) {
-      onLog?.(`تنبيه: تعذر إكمال البث المباشر: ${err.message || err}`, 'warning');
-    }
-
-    // Attempt 3: PackageManager Session
-    try {
-      const res = await this.installViaPackageManager(adb, file, onProgress, onLog);
-      if (res.success) {
-        return { ...res, methodUsed: 'session' };
-      }
-    } catch {}
-
-    // Attempt 4: Interactive Trigger as last resort
-    try {
-      const res = await this.installViaInteractivePrompt(adb, file, onProgress, onLog);
-      return { ...res, methodUsed: 'sdcard' };
-    } catch (err: any) {
-      throw new Error(`فشلت جميع طرق التثبيت. تفاصيل الخطأ: ${err.message || err}`);
-    }
+    // Default fallback
+    const res = await this.installViaStoragePipe(adb, file, onProgress, onLog);
+    return { ...res, methodUsed: 'sdcard' };
   }
 
   /**
-   * Universal Storage Push & Pipe Installation for Car Head Units:
-   * 1. Prepares destination folder (`mkdir -p /data/local/tmp /sdcard/Download`)
-   * 2. Pushes APK to verified writable storage directory using ADB Sync Stream
-   * 3. Sets permissions (chmod 777) and verifies file integrity
-   * 4. Pipes or installs APK directly to Package Manager
+   * Universal Storage Push & Direct Package Install for Car Head Units:
+   * 1. Prepares destination folder (/data/local/tmp and /sdcard/Download)
+   * 2. Pushes APK using AdbSync
+   * 3. Sets permissions (chmod 777)
+   * 4. Executes pm install with multi-tier flag degradation
+   * 5. Cleans up temp file
    */
   private static async installViaStoragePipe(
     adb: Adb,
@@ -115,18 +74,19 @@ export class ApkInstaller {
     const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
 
-    // Ensure common directories exist before attempting to push
+    // Ensure common directories exist and bypass security verifiers if possible
     try {
-      await this.execShell(adb, 'mkdir -p /data/local/tmp /sdcard/Download /sdcard 2>/dev/null');
+      await this.execShell(adb, 'mkdir -p /data/local/tmp /sdcard/Download 2>/dev/null');
+      await this.execShell(adb, 'settings put global verifier_verify_adb_installs 0 2>/dev/null');
+      await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
     } catch {}
 
     // Candidate paths in order of reliability on automotive head units
     const candidatePaths = [
       `/data/local/tmp/${safeName}`,
+      `/data/local/tmp/app_install.apk`,
       `/sdcard/Download/${safeName}`,
       `/sdcard/${safeName}`,
-      `/storage/emulated/0/Download/${safeName}`,
-      `/storage/emulated/0/${safeName}`,
     ];
 
     let targetPath = '';
@@ -144,7 +104,7 @@ export class ApkInstaller {
         if (verifyOutput.trim().length > 0) {
           targetPath = testPath;
           pushSuccess = true;
-          onLog?.(`تم التحقق من وجود الملف في الشاشة (${(size / (1024 * 1024)).toFixed(1)} MB) بنجاح.`, 'success');
+          onLog?.(`تم نقل الملف إلى الشاشة بنجاح (${(size / (1024 * 1024)).toFixed(1)} MB).`, 'success');
           break;
         }
       } catch (err: any) {
@@ -155,7 +115,7 @@ export class ApkInstaller {
 
     if (!pushSuccess || !targetPath) {
       // Fallback: Push via chunked shell socket
-      targetPath = `/data/local/tmp/${safeName}`;
+      targetPath = `/data/local/tmp/app_install.apk`;
       onLog?.('جاري محاولة الرفع عبر قناة Shell المباشرة البديلة...', 'info');
       try {
         await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
@@ -174,20 +134,19 @@ export class ApkInstaller {
       await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
     } catch {}
 
-    onLog?.(`تم نقل الملف بنجاح. جاري تنفيذ أوامر التثبيت البرمجية على شاشة السيارة...`, 'info');
+    // Short pause for socket stabilization
+    await new Promise((r) => setTimeout(r, 200));
+
+    onLog?.(`تم تجهيز الملف. جاري تنفيذ أوامر التثبيت على شاشة السيارة...`, 'info');
     onProgress?.(90, 'installing', 'تشغيل أمر التثبيت عبر مدير حزم الشاشة...');
 
-    // Multi-tier command degradation
+    // Multi-tier command degradation (direct file installation)
     const commandsToTry = [
-      `cat "${targetPath}" | pm install -i "com.android.vending" -r -d -g -t -S ${size}`,
-      `cat "${targetPath}" | pm install -r -d -g -t -S ${size}`,
-      `cat "${targetPath}" | pm install -r -d -t -S ${size}`,
-      `cat "${targetPath}" | pm install -r -S ${size}`,
-      `cat "${targetPath}" | pm install -S ${size}`,
-      `pm install -i "com.android.vending" -r -d -g -t "${targetPath}"`,
       `pm install -r -d -g -t "${targetPath}"`,
+      `pm install -r -d -t "${targetPath}"`,
       `pm install -r -t "${targetPath}"`,
       `pm install -r "${targetPath}"`,
+      `pm install "${targetPath}"`,
       `cmd package install -r -d -g -t "${targetPath}"`,
       `cmd package install -r "${targetPath}"`,
     ];
@@ -195,31 +154,59 @@ export class ApkInstaller {
     let lastOutput = '';
     let isSuccess = false;
 
-    for (const cmd of commandsToTry) {
+    for (let i = 0; i < commandsToTry.length; i++) {
+      const cmd = commandsToTry[i];
       try {
-        onLog?.(`تنفيذ الأمر: ${cmd}`, 'info');
+        onLog?.(`[محاولة ${i + 1}/${commandsToTry.length}] تنفيذ: ${cmd}`, 'info');
         const output = await this.execShell(adb, cmd);
         lastOutput = output.trim();
         const isCmdSuccess = lastOutput.toLowerCase().includes('success');
-        onLog?.(`استجابة الشاشة: ${lastOutput || '(لا توجد استجابة)'}`, isCmdSuccess ? 'success' : 'info');
+        onLog?.(`استجابة الشاشة: ${lastOutput || '(تم التنفيذ)'}`, isCmdSuccess ? 'success' : 'info');
 
         if (isCmdSuccess) {
           isSuccess = true;
           break;
         }
 
-        // Fatal errors that shouldn't be retried
+        // Fatal errors that shouldn't be retried with the same file
         if (
           lastOutput.includes('INSTALL_FAILED_ALREADY_EXISTS') ||
           lastOutput.includes('INSTALL_FAILED_VERSION_DOWNGRADE') ||
           lastOutput.includes('INSTALL_FAILED_CPU_ABI_INCOMPATIBLE') ||
           lastOutput.includes('INSTALL_FAILED_INSUFFICIENT_STORAGE') ||
-          lastOutput.includes('INSTALL_PARSE_FAILED_NOT_APK')
+          lastOutput.includes('INSTALL_PARSE_FAILED_NOT_APK') ||
+          lastOutput.includes('INSTALL_FAILED_UPDATE_INCOMPATIBLE')
         ) {
           break;
         }
+
+        // Pause 300ms before retrying next command
+        await new Promise((r) => setTimeout(r, 300));
       } catch (err: any) {
         lastOutput = err.message || String(err);
+        onLog?.(`تنبيه: ${lastOutput}`, 'warning');
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+
+    // If direct pm commands didn't return success, try Android session install
+    if (!isSuccess && !lastOutput.includes('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
+      try {
+        onLog?.('جاري محاولة التثبيت عبر نظام جلسات الحزم (Package Installer Session)...', 'info');
+        const createOut = await this.execShell(adb, `pm install-create -r -d -g -t -S ${size}`);
+        const sessionMatch = createOut.match(/\[(\d+)\]/);
+        if (sessionMatch && sessionMatch[1]) {
+          const sessionId = sessionMatch[1];
+          onLog?.(`تم إنشاء جلسة تثبيت برقم: [${sessionId}]`, 'info');
+          await this.execShell(adb, `pm install-write -S ${size} ${sessionId} base.apk "${targetPath}"`);
+          const commitOut = await this.execShell(adb, `pm install-commit ${sessionId}`);
+          onLog?.(`استجابة اعتماد الجلسة: ${commitOut}`, commitOut.toLowerCase().includes('success') ? 'success' : 'info');
+          if (commitOut.toLowerCase().includes('success')) {
+            isSuccess = true;
+          }
+        }
+      } catch (err: any) {
+        onLog?.(`فشلت محاولة الجلسة: ${err.message || err}`, 'warning');
       }
     }
 
@@ -242,8 +229,20 @@ export class ApkInstaller {
       };
     }
 
+    // If all failed, trigger interactive installer as last resort
+    try {
+      onLog?.('جاري إطلاق نافذة التثبيت التفاعلية على شاشة سيارتك...', 'info');
+      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
+      await this.execShell(adb, `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive"`);
+      onProgress?.(100, 'processing', 'تم فتح نافذة التثبيت على شاشة السيارة');
+      return {
+        success: true,
+        message: 'تم نقل التطبيق وفتح نافذة التثبيت على شاشة سيارتك. اضغط على زر (تثبيت / Install) على الشاشة لإتمام العملية.',
+      };
+    } catch {}
+
     const friendlyError = this.translateAndroidInstallError(lastOutput);
-    return { success: false, message: friendlyError || lastOutput || 'فشل التثبيت' };
+    return { success: false, message: friendlyError || lastOutput || 'فشل التثبيت على الشاشة' };
   }
 
   /**
@@ -268,7 +267,7 @@ export class ApkInstaller {
       const transform = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           transferredBytes += chunk.byteLength;
-          const pct = 5 + Math.min(85, Math.round((transferredBytes / size) * 85));
+          const pct = 5 + Math.min(80, Math.round((transferredBytes / size) * 80));
           const mbTransferred = (transferredBytes / (1024 * 1024)).toFixed(1);
           const mbTotal = (size / (1024 * 1024)).toFixed(1);
           onProgress?.(pct, 'uploading', `جاري رفع APK إلى الشاشة (${mbTransferred} / ${mbTotal} MB)`);
@@ -291,7 +290,7 @@ export class ApkInstaller {
   }
 
   /**
-   * Fallback: Pushes file via standard shell pipe for car head units where sync: is locked
+   * Fallback: Pushes file via standard shell pipe for car head units where sync is restricted
    */
   private static async pushFileViaShell(
     adb: Adb,
@@ -315,7 +314,7 @@ export class ApkInstaller {
         if (value) {
           await writer.write(value);
           sentBytes += value.byteLength;
-          const pct = 5 + Math.min(85, Math.round((sentBytes / size) * 85));
+          const pct = 5 + Math.min(80, Math.round((sentBytes / size) * 80));
           const mbTransferred = (sentBytes / (1024 * 1024)).toFixed(1);
           const mbTotal = (size / (1024 * 1024)).toFixed(1);
           onProgress?.(pct, 'uploading', `رفع عبر Shell (${mbTransferred} / ${mbTotal} MB)`);
@@ -336,11 +335,14 @@ export class ApkInstaller {
         const { done } = await socketReader.read();
         if (done) break;
       }
-    } catch {}
+    } catch {} finally {
+      socketReader.releaseLock();
+      try { await socket.close(); } catch {}
+    }
   }
 
   /**
-   * Direct Binary Stream (Zero Storage Required) - streams APK directly into `exec:cmd package install -S` or `exec:pm install -S`
+   * Direct Stream without exec: prefix
    */
   private static async installViaDirectStream(
     adb: Adb,
@@ -350,11 +352,10 @@ export class ApkInstaller {
   ): Promise<{ success: boolean; message: string }> {
     const size = file.size;
     
-    // Try exec: first (binary stream), then fallback to shell:
+    // Only use shell: prefixes to avoid "Socket open failed" with exec: on car head units
     const prefixes = [
-      `exec:cmd package install -r -d -g -t -S ${size}`,
-      `exec:pm install -r -d -g -t -S ${size}`,
-      `shell:pm install -i "com.android.vending" -r -d -g -t -S ${size}`,
+      `shell:pm install -r -d -g -t -S ${size}`,
+      `shell:pm install -r -t -S ${size}`,
       `shell:pm install -r -S ${size}`,
     ];
 
@@ -377,7 +378,7 @@ export class ApkInstaller {
             if (value) {
               await writer.write(value);
               sentBytes += value.byteLength;
-              const pct = 5 + Math.min(90, Math.round((sentBytes / size) * 90));
+              const pct = 5 + Math.min(85, Math.round((sentBytes / size) * 85));
               onProgress?.(pct, 'uploading', `بث مباشر (${(sentBytes / 1024 / 1024).toFixed(1)} / ${(size / 1024 / 1024).toFixed(1)} MB)`);
             }
           }
@@ -389,19 +390,26 @@ export class ApkInstaller {
           reader.releaseLock();
         }
 
-        onProgress?.(95, 'installing', 'قراءة نتيجة التثبيت...');
+        onProgress?.(92, 'installing', 'قراءة نتيجة التثبيت...');
         const decoder = new TextDecoder();
         const socketReader = socket.readable.getReader();
         let output = '';
 
-        while (true) {
-          const { done, value } = await socketReader.read();
-          if (done) break;
-          if (value) output += decoder.decode(value, { stream: true });
+        try {
+          while (true) {
+            const { done, value } = await socketReader.read();
+            if (done) break;
+            if (value) output += decoder.decode(value, { stream: true });
+          }
+          output += decoder.decode();
+        } finally {
+          socketReader.releaseLock();
+          try { await socket.close(); } catch {}
         }
-        output += decoder.decode();
 
         const trimmed = output.trim();
+        onLog?.(`استجابة البث المباشر: ${trimmed || '(لا توجد استجابة)'}`, trimmed.toLowerCase().includes('success') ? 'success' : 'info');
+
         if (trimmed.toLowerCase().includes('success')) {
           onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
           try {
@@ -421,59 +429,6 @@ export class ApkInstaller {
   }
 
   /**
-   * Official @yume-chan/android-bin PackageManager
-   */
-  private static async installViaPackageManager(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-  ): Promise<{ success: boolean; message: string }> {
-    onProgress?.(20, 'uploading', 'بدء التثبيت عبر مدير الحزم القياسي...');
-    const pm = new PackageManager(adb);
-
-    try {
-      const stream = new WrapReadableStream({ start: () => file.stream() as any });
-      await pm.pushAndInstallStream(stream as any);
-      onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
-      return { success: true, message: 'تم تثبيت التطبيق بنجاح عبر مدير الحزم.' };
-    } catch (err: any) {
-      const msg = err.message || String(err);
-      const friendlyError = this.translateAndroidInstallError(msg);
-      return { success: false, message: friendlyError || msg };
-    }
-  }
-
-  /**
-   * Interactive Package Installer Trigger
-   */
-  private static async installViaInteractivePrompt(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-  ): Promise<{ success: boolean; message: string }> {
-    const targetPath = `/data/local/tmp/sam_installer_${Date.now()}.apk`;
-    onLog?.('تجهيز نافذة التثبيت التفاعلية على شاشة السيارة...', 'info');
-
-    // Push file using safe push
-    await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-
-    // Launch Package Installer Intent
-    onProgress?.(95, 'installing', 'إرسال أمر فتح نافذة التثبيت لشاشة السيارة...');
-    const amCmd = `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive"`;
-    await this.execShell(adb, amCmd);
-
-    onLog?.('تم فتح نافذة التثبيت على شاشة سيارتك! اضغط على "تثبيت" (Install) الظاهرة على الشاشة لإكمال العملية.', 'success');
-    onProgress?.(100, 'processing', 'تم إرسال الطلب إلى شاشة السيارة');
-
-    return {
-      success: true,
-      message: 'تم نقل التطبيق وفتح نافذة التثبيت على شاشة السيارة. يرجى الضغط على زر (تثبيت / Install) على شاشة السيارة لإتمام التثبيت.',
-    };
-  }
-
-  /**
    * Automatically grants recommended automotive permissions for known car applications & stores
    */
   private static async autoGrantAutomotivePermissions(
@@ -483,8 +438,8 @@ export class ApkInstaller {
   ): Promise<void> {
     const lower = fileName.toLowerCase();
 
-    // RuStore or App Stores
-    if (lower.includes('rustore') || lower.includes('store') || lower.includes('market') || lower.includes('aurora')) {
+    // App Stores
+    if (lower.includes('store') || lower.includes('market') || lower.includes('aurora') || lower.includes('rustore')) {
       onLog?.('اكتشاف متجر تطبيقات: جاري تفعيل أذونات تثبيت الحزم والنوافذ المنبثقة تلقائياً...', 'info');
       const pkgs = ['ru.vk.store', 'com.aurora.store', 'com.android.vending'];
       for (const p of pkgs) {
@@ -511,13 +466,13 @@ export class ApkInstaller {
         await this.execShell(adb, `dumpsys deviceidle whitelist +${mdPkg} 2>/dev/null`);
         await this.execShell(adb, `appops set ${mdPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
         await this.execShell(adb, `settings put secure accessibility_enabled 1 2>/dev/null`);
-        await this.execShell(adb, `settings put secure enabled_accessibility_services com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.AccessibilityService:com.arlosoft.macrodroid/com.arlosoft.macrodroid.common.MacroDroidAccessibilityService 2>/dev/null`);
+        await this.execShell(adb, `settings put secure enabled_accessibility_services com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.AccessibilityService:com.arlosoft.macrodroid/com.arlosoft.macrodroid.common.MacroDroidAccessibilityService:flar2.homebutton/flar2.homebutton.ButtonMapperService:io.github.sds100.keymapper/io.github.sds100.keymapper.service.KeyMapperAccessibilityService 2>/dev/null`);
       } catch {}
     }
   }
 
   /**
-   * Helper to execute a command over standard ADB shell
+   * Helper to execute a command over standard ADB shell with clean socket termination
    */
   private static async execShell(adb: Adb, command: string): Promise<string> {
     try {
@@ -525,14 +480,21 @@ export class ApkInstaller {
       const reader = socket.readable.getReader();
       const decoder = new TextDecoder();
       let output = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          output += decoder.decode(value, { stream: true });
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            output += decoder.decode(value, { stream: true });
+          }
         }
+        output += decoder.decode();
+      } finally {
+        reader.releaseLock();
+        try {
+          await socket.close();
+        } catch {}
       }
-      output += decoder.decode();
       return output.trim();
     } catch (e: any) {
       throw new Error(`خطأ في تنفيذ الأمر عبر Shell: ${e.message || e}`);

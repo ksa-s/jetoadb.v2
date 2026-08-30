@@ -229,26 +229,65 @@ export class CarSystemTools {
    */
   public static async sendMediaKey(
     adb: Adb,
-    key: 'next' | 'prev' | 'play_pause' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back'
+    key: 'next' | 'prev' | 'play_pause' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back' | 'call' | 'end_call'
   ): Promise<string> {
-    const keyMap: Record<string, { code: number; name: string }> = {
-      next: { code: 87, name: 'التالي (Next Track)' },
-      prev: { code: 88, name: 'السابق (Previous Track)' },
-      play_pause: { code: 85, name: 'تشغيل/إيقاف مؤقت (Play/Pause)' },
-      vol_up: { code: 24, name: 'رفع الصوت (Volume Up)' },
-      vol_down: { code: 25, name: 'خفض الصوت (Volume Down)' },
-      mute: { code: 164, name: 'كتم الصوت (Mute)' },
-      voice: { code: 231, name: 'المساعد الصوتي (Voice Assist)' },
-      home: { code: 3, name: 'الرئيسية (Home)' },
-      back: { code: 4, name: 'رجوع (Back)' },
+    const keyActions: Record<string, { cmd: string; name: string }> = {
+      next: {
+        cmd: 'input keyevent 87 ; input keyevent 125 ; cmd media_session dispatch --key next 2>/dev/null ; am broadcast -a com.android.music.musicservicecommand --es command next 2>/dev/null ; am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 87 2>/dev/null',
+        name: 'التالي (Next Track)',
+      },
+      prev: {
+        cmd: 'input keyevent 88 ; input keyevent 124 ; cmd media_session dispatch --key previous 2>/dev/null ; am broadcast -a com.android.music.musicservicecommand --es command previous 2>/dev/null ; am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 88 2>/dev/null',
+        name: 'السابق (Previous Track)',
+      },
+      play_pause: {
+        cmd: 'input keyevent 85 ; input keyevent 126 ; cmd media_session dispatch --key play-pause 2>/dev/null ; am broadcast -a com.android.music.musicservicecommand --es command togglepause 2>/dev/null ; am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 85 2>/dev/null',
+        name: 'تشغيل/إيقاف مؤقت (Play/Pause)',
+      },
+      vol_up: {
+        cmd: 'input keyevent 24 ; cmd media_session volume --adj raise 2>/dev/null',
+        name: 'رفع الصوت (Volume Up)',
+      },
+      vol_down: {
+        cmd: 'input keyevent 25 ; cmd media_session volume --adj lower 2>/dev/null',
+        name: 'خفض الصوت (Volume Down)',
+      },
+      mute: {
+        cmd: 'input keyevent 164 ; input keyevent 91 ; cmd media_session volume --adj mute 2>/dev/null',
+        name: 'كتم الصوت (Mute)',
+      },
+      voice: {
+        cmd: 'input keyevent 231 2>/dev/null ; input keyevent 219 2>/dev/null ; input keyevent 84 2>/dev/null ; am start -a android.intent.action.VOICE_COMMAND 2>/dev/null || am start -a android.intent.action.ASSIST 2>/dev/null',
+        name: 'المساعد الصوتي (Voice Assist)',
+      },
+      home: {
+        cmd: 'input keyevent 3',
+        name: 'الرئيسية (Home)',
+      },
+      back: {
+        cmd: 'input keyevent 4',
+        name: 'رجوع (Back)',
+      },
+      call: {
+        cmd: 'input keyevent 5 ; am start -a android.intent.action.CALL_BUTTON 2>/dev/null',
+        name: 'الرد على المكالمة (Call)',
+      },
+      end_call: {
+        cmd: 'input keyevent 6',
+        name: 'إنهاء المكالمة (End Call)',
+      },
     };
 
-    const target = keyMap[key] || { code: 85, name: key };
+    const target = keyActions[key];
+    if (!target) {
+      throw new Error(`مفتاح غير معروف: ${key}`);
+    }
+
     try {
-      await this.exec(adb, `input keyevent ${target.code}`);
-      return `تم إرسال إشارة ${target.name} إلى نظام السيارة.`;
+      await this.exec(adb, target.cmd);
+      return `تم إرسال إشارة ${target.name} وتوجيهها لميديا ومحرك صوت السيارة بنجاح.`;
     } catch (e: any) {
-      throw new Error(`فشل إرسال زر التحكم: ${e.message || e}`);
+      throw new Error(`فشل إرسال زر التحكم (${target.name}): ${e.message || e}`);
     }
   }
 
@@ -527,12 +566,19 @@ export class CarSystemTools {
       const reader = socket.readable.getReader();
       const decoder = new TextDecoder();
       let output = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) output += decoder.decode(value, { stream: true });
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) output += decoder.decode(value, { stream: true });
+        }
+        output += decoder.decode();
+      } finally {
+        reader.releaseLock();
+        try {
+          await socket.close();
+        } catch {}
       }
-      output += decoder.decode();
       return output.trim();
     } catch (e: any) {
       throw new Error(`خطأ تنفيذ: ${e.message || e}`);
