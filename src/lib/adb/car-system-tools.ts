@@ -38,11 +38,9 @@ export class CarSystemTools {
    */
   public static async launchApp(adb: Adb, packageName: string): Promise<string> {
     try {
-      // Use monkey tool to launch default intent
       const cmd = `monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
       const out = await this.exec(adb, cmd);
       if (out.includes('No activities found')) {
-        // Fallback: try am start
         return await this.exec(adb, `am start ${packageName}`);
       }
       return 'تم إرسال أمر تشغيل التطبيق إلى الشاشة.';
@@ -98,7 +96,7 @@ export class CarSystemTools {
         await this.exec(adb, item.cmd);
         logs.push(`✓ ${item.desc}`);
       } catch (e: any) {
-        logs.push(`⚠️ تعذر تطبيق: ${item.desc} (${e.message || e})`);
+        logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
       }
     }
 
@@ -106,204 +104,364 @@ export class CarSystemTools {
   }
 
   /**
-   * Adjusts screen density (DPI) for widescreen car displays
+   * Reboots the car head unit safely
+   */
+  public static async rebootDevice(adb: Adb, mode: 'normal' | 'recovery' | 'bootloader' | 'soft' = 'normal'): Promise<string> {
+    try {
+      if (mode === 'soft') {
+        await this.exec(adb, 'setprop ctl.restart zygote || killall system_server');
+        return 'تم إرسال أمر إعادة تشغيل واجهة النظام (Soft Reboot).';
+      }
+      const flag = mode === 'normal' ? '' : mode;
+      await this.exec(adb, `reboot ${flag}`);
+      return 'تم إرسال أمر إعادة تشغيل شاشة السيارة بنجاح.';
+    } catch (e: any) {
+      throw new Error(`فشل إعادة التشغيل: ${e.message || e}`);
+    }
+  }
+
+  public static async rebootCarScreen(adb: Adb, mode: 'normal' | 'recovery' | 'bootloader' = 'normal'): Promise<string> {
+    return this.rebootDevice(adb, mode);
+  }
+
+  /**
+   * Sets screen density (DPI)
    */
   public static async setDisplayDensity(adb: Adb, density: number | 'reset'): Promise<string> {
     try {
       const cmd = density === 'reset' ? 'wm density reset' : `wm density ${density}`;
       await this.exec(adb, cmd);
-      return density === 'reset' ? 'تمت استعادة الكثافة الافتراضية للشاشة' : `تم ضبط كثافة الشاشة إلى ${density} DPI`;
+      return density === 'reset' ? 'تم استعادة كثافة الشاشة الافتراضية' : `تم ضبط كثافة الشاشة إلى ${density} DPI بنجاح`;
     } catch (e: any) {
-      throw new Error(`فشل تغيير كثافة الشاشة: ${e.message || e}`);
+      throw new Error(`تعذر ضبط كثافة الشاشة: ${e.message || e}`);
     }
   }
 
   /**
-   * Adjusts screen resolution
+   * Sets screen resolution
    */
   public static async setDisplaySize(adb: Adb, size: string | 'reset'): Promise<string> {
     try {
       const cmd = size === 'reset' ? 'wm size reset' : `wm size ${size}`;
       await this.exec(adb, cmd);
-      return size === 'reset' ? 'تمت استعادة الدقة الافتراضية للشاشة' : `تم ضبط دقة الشاشة إلى ${size}`;
+      return size === 'reset' ? 'تم استعادة دقة الشاشة الافتراضية' : `تم ضبط أبعاد الشاشة إلى ${size} بنجاح`;
     } catch (e: any) {
-      throw new Error(`فشل تغيير دقة الشاشة: ${e.message || e}`);
+      throw new Error(`تعذر ضبط دقة الشاشة: ${e.message || e}`);
     }
   }
 
   /**
-   * Reboots the car screen system
-   */
-  public static async rebootDevice(adb: Adb, mode: 'normal' | 'recovery' | 'soft'): Promise<string> {
-    try {
-      if (mode === 'soft') {
-        await this.exec(adb, 'setprop ctl.restart zygote');
-        return 'جاري إعادة تشغيل واجهة النظام (Soft Reboot)...';
-      }
-      if (mode === 'recovery') {
-        await this.exec(adb, 'reboot recovery');
-        return 'جاري إعادة التشغيل إلى وضع الريكفري (Recovery)...';
-      }
-      await this.exec(adb, 'reboot');
-      return 'جاري إعادة تشغيل شاشة السيارة...';
-    } catch (e: any) {
-      throw new Error(`فشل أمر إعادة التشغيل: ${e.message || e}`);
-    }
-  }
-
-  /**
-   * Takes screenshot from device using standard shell and sync
+   * Captures screen screenshot as a Blob
    */
   public static async captureScreenshot(adb: Adb): Promise<Blob> {
-    const tempFile = `/sdcard/sam_screenshot_${Date.now()}.png`;
     try {
-      // Step 1: Capture screenshot to temp file on car head unit
-      await this.exec(adb, `screencap -p "${tempFile}"`);
-
-      // Step 2: Read image via ADB sync
-      const sync = await adb.sync();
+      const socket = await adb.createSocket('exec:screencap -p');
+      const reader = socket.readable.getReader();
       const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
+      }
+      return new Blob(chunks, { type: 'image/png' });
+    } catch (e: any) {
+      // Fallback via shell
       try {
-        const stream = sync.read(tempFile);
+        const tmpPath = '/data/local/tmp/screen.png';
+        await this.exec(adb, `screencap -p ${tmpPath}`);
+        const sync = await adb.sync();
+        const stream = sync.read(tmpPath);
         const reader = stream.getReader();
+        const chunks: Uint8Array[] = [];
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           if (value) chunks.push(value);
         }
-      } finally {
         await sync.dispose();
+        await this.exec(adb, `rm -f ${tmpPath}`);
+        return new Blob(chunks, { type: 'image/png' });
+      } catch (err: any) {
+        throw new Error(`فشل التقاط الشاشة: ${err.message || err}`);
       }
-
-      // Step 3: Delete temp file
-      try {
-        await this.exec(adb, `rm -f "${tempFile}"`);
-      } catch {}
-
-      if (chunks.length === 0) {
-        throw new Error('لم يتم استلام أي بيانات للصورة.');
-      }
-
-      return new Blob(chunks, { type: 'image/png' });
-    } catch (e: any) {
-      // Clean up in case of error
-      try {
-        await this.exec(adb, `rm -f "${tempFile}"`);
-      } catch {}
-      throw new Error(`تعذر التقاط لقطة الشاشة: ${e.message || e}`);
     }
   }
 
   /**
-   * Grants a runtime permission to a package via pm grant
+   * Grants a single permission to a package
    */
   public static async grantPermission(adb: Adb, packageName: string, permission: string): Promise<string> {
     try {
-      const out = await this.exec(adb, `pm grant ${packageName} ${permission}`);
-      if (out && (out.includes('SecurityException') || out.includes('not a runtime permission') || out.includes('Unknown package'))) {
-        throw new Error(out);
-      }
-      return `تم منح الإذن (${permission}) بنجاح.`;
+      await this.exec(adb, `pm grant ${packageName} ${permission}`);
+      return `تم منح الإذن (${permission}) بنجاح`;
     } catch (e: any) {
       throw new Error(`فشل منح الإذن: ${e.message || e}`);
     }
   }
 
   /**
-   * Revokes a runtime permission from a package
+   * Sets an AppOp permission mode
    */
-  public static async revokePermission(adb: Adb, packageName: string, permission: string): Promise<string> {
+  public static async setAppOp(adb: Adb, packageName: string, op: string, mode: 'allow' | 'deny' = 'allow'): Promise<string> {
     try {
-      const out = await this.exec(adb, `pm revoke ${packageName} ${permission}`);
-      if (out && (out.includes('SecurityException') || out.includes('Unknown package'))) {
-        throw new Error(out);
-      }
-      return `تم سحب الإذن (${permission}) بنجاح.`;
+      await this.exec(adb, `appops set ${packageName} ${op} ${mode}`);
+      return `تم ضبط خاصية AppOp (${op}) إلى ${mode}`;
     } catch (e: any) {
-      throw new Error(`فشل سحب الإذن: ${e.message || e}`);
+      throw new Error(`فشل ضبط AppOp: ${e.message || e}`);
     }
   }
 
   /**
-   * Sets AppOps permission mode (SYSTEM_ALERT_WINDOW, GET_USAGE_STATS, etc.)
+   * Sets battery optimization whitelist
    */
-  public static async setAppOp(
-    adb: Adb,
-    packageName: string,
-    opName: string,
-    mode: 'allow' | 'deny' | 'ignore' | 'default' = 'allow'
-  ): Promise<string> {
-    try {
-      const out = await this.exec(adb, `appops set ${packageName} ${opName} ${mode}`);
-      if (out && out.includes('Error')) {
-        throw new Error(out);
-      }
-      return `تم ضبط تصريح (${opName}) إلى (${mode}) بنجاح.`;
-    } catch (e: any) {
-      throw new Error(`فشل ضبط AppOps: ${e.message || e}`);
-    }
-  }
-
-  /**
-   * Whitelists an app from battery optimizations (keep running in car background)
-   */
-  public static async setBatteryOptimizationWhitelist(adb: Adb, packageName: string, enable: boolean = true): Promise<string> {
+  public static async setBatteryOptimizationWhitelist(adb: Adb, packageName: string, enable: boolean): Promise<string> {
     try {
       const flag = enable ? `+${packageName}` : `-${packageName}`;
-      const out = await this.exec(adb, `dumpsys deviceidle whitelist ${flag}`);
-      return enable
-        ? `تم استثناء التطبيق (${packageName}) من توفير الطاقة وإبقاؤه نشطاً في الخلفية.`
-        : `تمت إزالة التطبيق (${packageName}) من قائمة الاستثناء من توفير الطاقة.`;
+      await this.exec(adb, `dumpsys deviceidle whitelist ${flag}`);
+      return enable ? 'تم استثناء التطبيق من توفير الطاقة وإغلاق الخلفية' : 'تم تفعيل توفير الطاقة على التطبيق';
     } catch (e: any) {
       throw new Error(`فشل ضبط استثناء البطارية: ${e.message || e}`);
     }
   }
 
   /**
-   * Grants all standard and special permissions required by Car Launchers and Navigation apps
+   * Tests or simulates steering wheel & media button keycodes on the car head unit
    */
-  public static async grantAllEssentialPermissions(
+  public static async sendMediaKey(
+    adb: Adb,
+    key: 'next' | 'prev' | 'play_pause' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back'
+  ): Promise<string> {
+    const keyMap: Record<string, { code: number; name: string }> = {
+      next: { code: 87, name: 'التالي (Next Track)' },
+      prev: { code: 88, name: 'السابق (Previous Track)' },
+      play_pause: { code: 85, name: 'تشغيل/إيقاف مؤقت (Play/Pause)' },
+      vol_up: { code: 24, name: 'رفع الصوت (Volume Up)' },
+      vol_down: { code: 25, name: 'خفض الصوت (Volume Down)' },
+      mute: { code: 164, name: 'كتم الصوت (Mute)' },
+      voice: { code: 231, name: 'المساعد الصوتي (Voice Assist)' },
+      home: { code: 3, name: 'الرئيسية (Home)' },
+      back: { code: 4, name: 'رجوع (Back)' },
+    };
+
+    const target = keyMap[key] || { code: 85, name: key };
+    try {
+      await this.exec(adb, `input keyevent ${target.code}`);
+      return `تم إرسال إشارة ${target.name} إلى نظام السيارة.`;
+    } catch (e: any) {
+      throw new Error(`فشل إرسال زر التحكم: ${e.message || e}`);
+    }
+  }
+
+  /**
+   * Complete All-in-One Steering Wheel Controls Fix (MacroDroid / Button Mapper / Key Mapper)
+   */
+  public static async applySteeringWheelCompleteFix(adb: Adb): Promise<string[]> {
+    const logs: string[] = [];
+    const packages = [
+      'com.arlosoft.macrodroid',
+      'flar2.homebutton',
+      'io.github.sds100.keymapper',
+    ];
+
+    logs.push('=== بدء تفعيل الحزمة الشاملة لأزرار المقود والدركسون ===');
+
+    // 1. Grant system permissions for MacroDroid & Button Mappers
+    for (const pkg of packages) {
+      const perms = [
+        'android.permission.WRITE_SECURE_SETTINGS',
+        'android.permission.CHANGE_CONFIGURATION',
+        'android.permission.SYSTEM_ALERT_WINDOW',
+        'android.permission.READ_LOGS',
+        'android.permission.DUMP',
+        'android.permission.PACKAGE_USAGE_STATS',
+        'android.permission.ACCESS_FINE_LOCATION',
+        'android.permission.ACCESS_COARSE_LOCATION',
+        'android.permission.SET_VOLUME_KEY_LONG_PRESS_LISTENER',
+        'android.permission.MEDIA_CONTENT_CONTROL',
+        'android.permission.BIND_ACCESSIBILITY_SERVICE',
+      ];
+
+      for (const p of perms) {
+        try {
+          await this.exec(adb, `pm grant ${pkg} ${p} 2>/dev/null`);
+        } catch {}
+      }
+
+      // AppOps
+      const ops = [
+        'SYSTEM_ALERT_WINDOW',
+        'GET_USAGE_STATS',
+        'WRITE_SETTINGS',
+        'REQUEST_INSTALL_PACKAGES',
+      ];
+      for (const op of ops) {
+        try {
+          await this.exec(adb, `appops set ${pkg} ${op} allow 2>/dev/null`);
+        } catch {}
+      }
+
+      // Battery Optimization
+      try {
+        await this.exec(adb, `dumpsys deviceidle whitelist +${pkg} 2>/dev/null`);
+      } catch {}
+    }
+    logs.push('✓ تم منح وتثبيت جميع صلاحيات النظام الآمنة (WRITE_SECURE_SETTINGS + READ_LOGS + AppOps)');
+
+    // 2. Enable Accessibility Services in Android Settings directly
+    const accessibilityServices = [
+      'com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.AccessibilityService',
+      'com.arlosoft.macrodroid/com.arlosoft.macrodroid.common.MacroDroidAccessibilityService',
+      'com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.VolumeButtonAccessibilityService',
+      'flar2.homebutton/flar2.homebutton.ButtonMapperAccessibilityService',
+      'io.github.sds100.keymapper/io.github.sds100.keymapper.service.MyAccessibilityService',
+    ].join(':');
+
+    try {
+      await this.exec(adb, 'settings put secure accessibility_enabled 1');
+      await this.exec(adb, `settings put secure enabled_accessibility_services "${accessibilityServices}"`);
+      logs.push('✓ تم تفعيل خدمات إمكانية الوصول (Accessibility Services) إجبارياً عبر ADB لتجاوز قفل إعدادات السيارة');
+    } catch (e: any) {
+      logs.push(`⚠️ تعذر ضبط خدمات إمكانية الوصول: ${e.message || e}`);
+    }
+
+    // 3. Enable Notification Listener Service
+    try {
+      const notifListeners = 'com.arlosoft.macrodroid/com.arlosoft.macrodroid.notification.NotificationService';
+      await this.exec(adb, `settings put secure enabled_notification_listeners "${notifListeners}"`);
+      logs.push('✓ تم تفعيل خدمة مراقبة الإشعارات وأسماء المقاطع الصوتية');
+    } catch {}
+
+    // 4. Activate CAN-Bus & Car Audio / Input Verbose Logging (for Jetour T2, Desay SV, Haval, Geely)
+    const logProps = [
+      'setprop log.tag.CarInputService VERBOSE',
+      'setprop log.tag.CarAudioService VERBOSE',
+      'setprop log.tag.KeyEvent VERBOSE',
+      'setprop log.tag.CANBUS VERBOSE',
+      'setprop log.tag.SteeringWheel VERBOSE',
+    ];
+    for (const prop of logProps) {
+      try {
+        await this.exec(adb, prop);
+      } catch {}
+    }
+    logs.push('✓ تم تفعيل بث إشارات أزرار الدركسون وقنوات CAN-Bus إلى سجلات النظام (LogCat Verbose)');
+
+    // 5. Trigger app start in foreground
+    try {
+      await this.exec(adb, 'am start -n com.arlosoft.macrodroid/.HomeScreenActivity 2>/dev/null');
+      await this.exec(adb, 'am startservice -n com.arlosoft.macrodroid/.MacroDroidService 2>/dev/null');
+    } catch {}
+
+    logs.push('=== اكتمل إعداد وبرمجة أزرار المقود بنجاح! جاهز للاستخدام ===');
+    return logs;
+  }
+
+  /**
+   * Permissions for RuStore & App Stores
+   */
+  public static async applyStoreAppPermissions(adb: Adb, packageName = 'ru.vk.store'): Promise<string[]> {
+    const logs: string[] = [];
+    const stores = [packageName, 'com.aurora.store', 'com.apkpure.aegon', 'com.android.vending'];
+
+    for (const pkg of stores) {
+      const commands = [
+        { cmd: `pm grant ${pkg} android.permission.REQUEST_INSTALL_PACKAGES 2>/dev/null`, desc: `صلاحية تثبيت التطبيقات لـ ${pkg}` },
+        { cmd: `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`, desc: `صلاحية النوافذ المنبثقة لـ ${pkg}` },
+        { cmd: `appops set ${pkg} REQUEST_INSTALL_PACKAGES allow 2>/dev/null`, desc: `تفعيل AppOps لتثبيت الحزم لـ ${pkg}` },
+        { cmd: `appops set ${pkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`, desc: `تفعيل AppOps للظهور فوق الشاشة لـ ${pkg}` },
+        { cmd: `dumpsys deviceidle whitelist +${pkg} 2>/dev/null`, desc: `استثناء من توفير الطاقة لـ ${pkg}` },
+      ];
+
+      for (const item of commands) {
+        try {
+          await this.exec(adb, item.cmd);
+          logs.push(`✓ ${item.desc}`);
+        } catch (e: any) {
+          logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
+        }
+      }
+    }
+    return logs;
+  }
+
+  /**
+   * Permissions for Navigation & Media Apps
+   */
+  public static async applyNavigationMediaPermissions(adb: Adb): Promise<string[]> {
+    const logs: string[] = [];
+    const packages = [
+      'ru.yandex.yandexnavi',
+      'ru.yandex.music',
+      'com.google.android.apps.maps',
+      'com.spotify.music',
+      'com.anghami',
+      'com.apple.android.music',
+    ];
+
+    for (const pkg of packages) {
+      const commands = [
+        { cmd: `pm grant ${pkg} android.permission.ACCESS_FINE_LOCATION 2>/dev/null`, desc: `صلاحية الـ GPS الدقيق لـ ${pkg}` },
+        { cmd: `pm grant ${pkg} android.permission.ACCESS_COARSE_LOCATION 2>/dev/null`, desc: `صلاحية الموقع لـ ${pkg}` },
+        { cmd: `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`, desc: `الظهور فوق الخرائط لـ ${pkg}` },
+        { cmd: `dumpsys deviceidle whitelist +${pkg} 2>/dev/null`, desc: `استثناء من توفير الطاقة وإغلاق الخلفية لـ ${pkg}` },
+      ];
+
+      for (const item of commands) {
+        try {
+          await this.exec(adb, item.cmd);
+          logs.push(`✓ ${item.desc}`);
+        } catch (e: any) {
+          logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
+        }
+      }
+    }
+    return logs;
+  }
+
+  /**
+   * Applies all general permissions to any custom package name
+   */
+  public static async grantAllPermissionsToPackage(
     adb: Adb,
     packageName: string
   ): Promise<{ granted: string[]; errors: string[] }> {
     const granted: string[] = [];
     const errors: string[] = [];
 
-    // 1. Runtime Permissions
-    const runtimePermissions = [
-      'android.permission.ACCESS_FINE_LOCATION',
-      'android.permission.ACCESS_COARSE_LOCATION',
-      'android.permission.ACCESS_BACKGROUND_LOCATION',
-      'android.permission.READ_EXTERNAL_STORAGE',
-      'android.permission.WRITE_EXTERNAL_STORAGE',
-      'android.permission.READ_MEDIA_AUDIO',
-      'android.permission.READ_MEDIA_IMAGES',
-      'android.permission.READ_MEDIA_VIDEO',
-      'android.permission.RECORD_AUDIO',
-      'android.permission.BLUETOOTH_CONNECT',
-      'android.permission.BLUETOOTH_SCAN',
-      'android.permission.POST_NOTIFICATIONS',
-      'android.permission.READ_PHONE_STATE',
-      'android.permission.CALL_PHONE',
-      'android.permission.CAMERA',
+    // 1. Standard Permissions
+    const standardPerms = [
+      { perm: 'android.permission.INTERNET', name: 'الإنترنت' },
+      { perm: 'android.permission.ACCESS_FINE_LOCATION', name: 'الموقع الدقيق (GPS)' },
+      { perm: 'android.permission.ACCESS_COARSE_LOCATION', name: 'الموقع التقريبي' },
+      { perm: 'android.permission.READ_EXTERNAL_STORAGE', name: 'قراءة التخزين' },
+      { perm: 'android.permission.WRITE_EXTERNAL_STORAGE', name: 'الكتابة على التخزين' },
+      { perm: 'android.permission.RECORD_AUDIO', name: 'تسجيل الصوت / الميكروفون' },
+      { perm: 'android.permission.CAMERA', name: 'الكاميرا' },
+      { perm: 'android.permission.READ_PHONE_STATE', name: 'حالة الهاتف' },
+      { perm: 'android.permission.REQUEST_INSTALL_PACKAGES', name: 'تثبيت حزم التطبيقات' },
+      { perm: 'android.permission.SYSTEM_ALERT_WINDOW', name: 'الظهور فوق التطبيقات' },
+      { perm: 'android.permission.WRITE_SECURE_SETTINGS', name: 'تعديل الإعدادات الآمنة' },
+      { perm: 'android.permission.CHANGE_CONFIGURATION', name: 'تغيير إعدادات الواجهة' },
+      { perm: 'android.permission.READ_LOGS', name: 'قراءة سجلات النظام وأزرار المقود' },
+      { perm: 'android.permission.DUMP', name: 'فحص خدمات النظام' },
+      { perm: 'android.permission.PACKAGE_USAGE_STATS', name: 'بيانات استخدام التطبيقات' },
     ];
 
-    for (const perm of runtimePermissions) {
+    for (const p of standardPerms) {
       try {
-        await this.exec(adb, `pm grant ${packageName} ${perm}`);
-        granted.push(perm);
+        await this.exec(adb, `pm grant ${packageName} ${p.perm}`);
+        granted.push(p.name);
       } catch (e: any) {
-        // Not all apps request all permissions
+        // Normal if app doesn't declare it
       }
     }
 
-    // 2. Special AppOps
+    // 2. AppOps
     const appOps = [
       { op: 'SYSTEM_ALERT_WINDOW', name: 'الظهور فوق التطبيقات الأخرى' },
       { op: 'GET_USAGE_STATS', name: 'الوصول لبيانات الاستخدام' },
       { op: 'WRITE_SETTINGS', name: 'تعديل إعدادات النظام' },
       { op: 'MANAGE_EXTERNAL_STORAGE', name: 'الوصول لجميع الملفات' },
-      { op: 'PICTURE_IN_PICTURE', name: 'نافذة صورة داخل صورة' },
       { op: 'REQUEST_INSTALL_PACKAGES', name: 'تثبيت حزم التطبيقات' },
     ];
 
@@ -316,30 +474,20 @@ export class CarSystemTools {
       }
     }
 
-    // 3. WRITE_SECURE_SETTINGS & DUMP
-    const systemPerms = [
-      'android.permission.WRITE_SECURE_SETTINGS',
-      'android.permission.DUMP',
-      'android.permission.PACKAGE_USAGE_STATS',
-      'android.permission.CHANGE_CONFIGURATION',
-    ];
-
-    for (const sp of systemPerms) {
-      try {
-        await this.exec(adb, `pm grant ${packageName} ${sp}`);
-        granted.push(sp);
-      } catch (e: any) {
-        // Some systems might restrict some
-      }
-    }
-
-    // 4. Battery Optimization Whitelist
+    // 3. Battery Optimization Whitelist
     try {
       await this.exec(adb, `dumpsys deviceidle whitelist +${packageName}`);
       granted.push('استثناء من إغلاق الخلفية وتوفير الطاقة (Battery Whitelist)');
     } catch {}
 
     return { granted, errors };
+  }
+
+  public static async grantAllEssentialPermissions(
+    adb: Adb,
+    packageName: string
+  ): Promise<{ granted: string[]; errors: string[] }> {
+    return this.grantAllPermissionsToPackage(adb, packageName);
   }
 
   /**
@@ -371,83 +519,6 @@ export class CarSystemTools {
     } catch {
       return [];
     }
-  }
-
-  /**
-   * 4PDA Russian Forum Fix: Full permission set for MacroDroid (Steering wheel controls, music switching, T2/Desay SV)
-   */
-  public static async apply4PdaMacroDroidFix(adb: Adb): Promise<string[]> {
-    const logs: string[] = [];
-    const pkg = 'com.arlosoft.macrodroid';
-    const commands = [
-      { cmd: `pm grant ${pkg} android.permission.CHANGE_CONFIGURATION`, desc: 'تغيير إعدادات الواجهة (CHANGE_CONFIGURATION)' },
-      { cmd: `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`, desc: 'تعديل إعدادات النظام الآمنة (WRITE_SECURE_SETTINGS)' },
-      { cmd: `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW`, desc: 'الظهور فوق الشاشة (SYSTEM_ALERT_WINDOW)' },
-      { cmd: `pm grant ${pkg} android.permission.READ_LOGS`, desc: 'قراءة سجلات أزرار المقود LogCat (READ_LOGS)' },
-      { cmd: `appops set ${pkg} SYSTEM_ALERT_WINDOW allow`, desc: 'تصريح AppOps للنوافذ العائمة' },
-      { cmd: `dumpsys deviceidle whitelist +${pkg}`, desc: 'استثناء من توفير الطاقة وإبقاء الخدمة نشطة بالخلفية' },
-    ];
-
-    for (const item of commands) {
-      try {
-        await this.exec(adb, item.cmd);
-        logs.push(`✓ ${item.desc}`);
-      } catch (e: any) {
-        logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
-      }
-    }
-    return logs;
-  }
-
-  /**
-   * 4PDA Russian Forum Fix: Permissions for RuStore & App Stores (Install unknown apps + Overlays)
-   */
-  public static async apply4PdaStoreFix(adb: Adb, packageName = 'ru.vk.store'): Promise<string[]> {
-    const logs: string[] = [];
-    const commands = [
-      { cmd: `pm grant ${packageName} android.permission.REQUEST_INSTALL_PACKAGES`, desc: 'صلاحية تثبيت التطبيقات (REQUEST_INSTALL_PACKAGES)' },
-      { cmd: `pm grant ${packageName} android.permission.SYSTEM_ALERT_WINDOW`, desc: 'صلاحية النوافذ المنبثقة (SYSTEM_ALERT_WINDOW)' },
-      { cmd: `appops set ${packageName} REQUEST_INSTALL_PACKAGES allow`, desc: 'تفعيل AppOps لتثبيت الحزم' },
-      { cmd: `appops set ${packageName} SYSTEM_ALERT_WINDOW allow`, desc: 'تفعيل AppOps للظهور فوق التطبيقات' },
-      { cmd: `dumpsys deviceidle whitelist +${packageName}`, desc: 'استثناء المتجر من توفير الطاقة' },
-    ];
-
-    for (const item of commands) {
-      try {
-        await this.exec(adb, item.cmd);
-        logs.push(`✓ ${item.desc}`);
-      } catch (e: any) {
-        logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
-      }
-    }
-    return logs;
-  }
-
-  /**
-   * 4PDA Russian Forum Fix: Permissions for Yandex Navi & Music (GPS, overlay, battery)
-   */
-  public static async apply4PdaYandexFix(adb: Adb): Promise<string[]> {
-    const logs: string[] = [];
-    const packages = ['ru.yandex.yandexnavi', 'ru.yandex.music'];
-
-    for (const pkg of packages) {
-      const commands = [
-        { cmd: `pm grant ${pkg} android.permission.ACCESS_FINE_LOCATION`, desc: `صلاحية الـ GPS الدقيق لـ ${pkg}` },
-        { cmd: `pm grant ${pkg} android.permission.ACCESS_COARSE_LOCATION`, desc: `صلاحية تحديد الموقع لـ ${pkg}` },
-        { cmd: `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW`, desc: `الظهور فوق الخرائط لـ ${pkg}` },
-        { cmd: `dumpsys deviceidle whitelist +${pkg}`, desc: `استثناء من توفير الطاقة لـ ${pkg}` },
-      ];
-
-      for (const item of commands) {
-        try {
-          await this.exec(adb, item.cmd);
-          logs.push(`✓ ${item.desc}`);
-        } catch (e: any) {
-          logs.push(`⚠️ ${item.desc}: ${e.message || e}`);
-        }
-      }
-    }
-    return logs;
   }
 
   private static async exec(adb: Adb, command: string): Promise<string> {

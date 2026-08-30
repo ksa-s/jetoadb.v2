@@ -184,10 +184,10 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
             onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
             className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
           >
-            <option value="auto">طريقة 4PDA لشاشات السيارات (ADB Sync + Cat PM Pipe - موصى به لـ Jetour / Haval / Geely)</option>
-            <option value="sdcard">مزامنة الذاكرة والأنبوب المباشر (4PDA Stream Pipe)</option>
-            <option value="stream">بث Shell المباشر (Direct PM Stream - بدون ذاكرة تخزين)</option>
-            <option value="session">مدير حزم أندرويد القياسي (PackageManager Stream)</option>
+            <option value="auto">الوضع التلقائي الذكي لشاشات السيارات (Jetour / Haval / Geely / Changan / Desay SV)</option>
+            <option value="sdcard">التثبيت عبر التخزين والأنابيب البرمجية (Storage Pipe)</option>
+            <option value="stream">البث الثنائي المباشر (Direct Binary Stream)</option>
+            <option value="session">مدير حزم أندرويد القياسي (PackageManager)</option>
           </select>
         </div>
 

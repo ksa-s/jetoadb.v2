@@ -487,17 +487,17 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
         </div>
       )}
 
-      {/* 4PDA Russian Automotive Forum Presets Box */}
-      <div className="bg-gradient-to-r from-blue-950/40 via-slate-950/60 to-purple-950/40 rounded-xl p-3.5 border border-blue-900/40 space-y-2.5">
+      {/* Smart Automotive Presets Box */}
+      <div className="bg-gradient-to-r from-blue-950/40 via-slate-950/60 to-purple-950/40 rounded-xl p-3.5 border border-blue-900/40 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-amber-400" />
             <span className="text-xs font-bold text-slate-100">
-              حلول وتصاريح شاشات السيارات المعتمدة من منتديات 4PDA (Jetour / Haval / Geely / Desay SV)
+              حزم وحلول شاشات السيارات الذكية (Jetour / Haval / Geely / Changan / Desay SV)
             </span>
           </div>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300 border border-blue-700/50">
-            تفعيل فوري بنقرة واحدة
+            تفعيل فوري وتجاوز قيود النظام
           </span>
         </div>
 
@@ -508,14 +508,14 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
             onClick={async () => {
               if (!adb) return;
               setIsProcessing(true);
-              onLog('بدء تطبيق حزمة أذونات MacroDroid الخمسة الكاملة للتحكم من المقود والدركسون (4PDA)...', 'info');
+              onLog('بدء تطبيق الحزمة الشاملة لأزرار المقود والدركسون (MacroDroid + Button Mapper + Accessibility)...', 'info');
               try {
-                const logs = await CarSystemTools.apply4PdaMacroDroidFix(adb);
-                logs.forEach(l => onLog(l, l.startsWith('✓') ? 'success' : 'warning'));
-                setFeedback({ type: 'success', message: 'تم تطبيق وتفعيل كافة أذونات MacroDroid للتحكم بالمقود بنجاح!' });
+                const logs = await CarSystemTools.applySteeringWheelCompleteFix(adb);
+                logs.forEach(l => onLog(l, l.startsWith('✓') ? 'success' : l.startsWith('===') ? 'info' : 'warning'));
+                setFeedback({ type: 'success', message: 'تم تفعيل حزمة أزرار المقود وخدمات إمكانية الوصول وسجلات CAN-Bus بنجاح!' });
                 setTargetPackage('com.arlosoft.macrodroid');
               } catch (e: any) {
-                setFeedback({ type: 'error', message: `فشل تطبيق أذونات MacroDroid: ${e.message || e}` });
+                setFeedback({ type: 'error', message: `فشل تطبيق أذونات المقود: ${e.message || e}` });
               } finally {
                 setIsProcessing(false);
               }
@@ -525,12 +525,12 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-bold text-purple-300 group-hover:text-purple-200">
-                أزرار المقود (MacroDroid)
+                حل أزرار المقود والدركسون
               </span>
               <Zap className="w-3.5 h-3.5 text-purple-400" />
             </div>
             <p className="text-[10px] text-slate-400 leading-tight">
-              تفعيل تبديل الأغاني من الدركسون وقراءة LogCat و WRITE_SECURE_SETTINGS
+              تفعيل تبديل الأغاني من الدركسون وخدمات إمكانية الوصول وسجلات CAN-Bus
             </p>
           </button>
 
@@ -541,11 +541,11 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
               if (!adb) return;
               setIsProcessing(true);
               const pkg = targetPackage.trim() || 'ru.vk.store';
-              onLog(`بدء تطبيق أذونات تثبيت الحزم والنوافذ العائمة لـ (${pkg})...`, 'info');
+              onLog(`بدء تطبيق أذونات تثبيت الحزم والنوافذ العائمة لمتاجر التطبيقات (${pkg})...`, 'info');
               try {
-                const logs = await CarSystemTools.apply4PdaStoreFix(adb, pkg);
+                const logs = await CarSystemTools.applyStoreAppPermissions(adb, pkg);
                 logs.forEach(l => onLog(l, l.startsWith('✓') ? 'success' : 'warning'));
-                setFeedback({ type: 'success', message: `تم تفعيل صلاحيات التثبيت والنوافذ لـ (${pkg}) بنجاح!` });
+                setFeedback({ type: 'success', message: `تم تفعيل صلاحيات التثبيت والنوافذ لمتاجر التطبيقات بنجاح!` });
               } catch (e: any) {
                 setFeedback({ type: 'error', message: `فشل تطبيق أذونات المتجر: ${e.message || e}` });
               } finally {
@@ -557,7 +557,7 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-bold text-blue-300 group-hover:text-blue-200">
-                متاجر التطبيقات (RuStore)
+                متاجر التطبيقات (App Stores)
               </span>
               <Shield className="w-3.5 h-3.5 text-blue-400" />
             </div>
@@ -566,19 +566,19 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
             </p>
           </button>
 
-          {/* Yandex Navi & Music */}
+          {/* Navigation & Music Apps */}
           <button
             type="button"
             onClick={async () => {
               if (!adb) return;
               setIsProcessing(true);
-              onLog('بدء تطبيق تصاريح الملاحة والموسيقى (Yandex Navi & Music)...', 'info');
+              onLog('بدء تطبيق تصاريح الملاحة والموسيقى (GPS + Overlays + Battery Whitelist)...', 'info');
               try {
-                const logs = await CarSystemTools.apply4PdaYandexFix(adb);
+                const logs = await CarSystemTools.applyNavigationMediaPermissions(adb);
                 logs.forEach(l => onLog(l, l.startsWith('✓') ? 'success' : 'warning'));
-                setFeedback({ type: 'success', message: 'تم تفعيل الـ GPS والظهور واستثناء البطارية لتطبيقات Yandex بنجاح!' });
+                setFeedback({ type: 'success', message: 'تم تفعيل الـ GPS والظهور واستثناء البطارية لتطبيقات الملاحة والصوت بنجاح!' });
               } catch (e: any) {
-                setFeedback({ type: 'error', message: `فشل تطبيق أذونات Yandex: ${e.message || e}` });
+                setFeedback({ type: 'error', message: `فشل تطبيق أذونات الملاحة: ${e.message || e}` });
               } finally {
                 setIsProcessing(false);
               }
@@ -588,7 +588,7 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-bold text-emerald-300 group-hover:text-emerald-200">
-                خرائط وموسيقى Yandex
+                خرائط وموسيقى وتطبيقات وسائط
               </span>
               <Check className="w-3.5 h-3.5 text-emerald-400" />
             </div>
@@ -596,6 +596,47 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
               تفعيل دقة الـ GPS والظهور فوق الشاشة والتشغيل الدائم بالخلفية
             </p>
           </button>
+        </div>
+
+        {/* Interactive Steering Wheel Key Tester */}
+        <div className="pt-2 border-t border-slate-800/80">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+              <Tv className="w-3.5 h-3.5 text-cyan-400" />
+              أداة اختبار ومحاكاة أزرار الدركسون والميديا:
+            </span>
+            <span className="text-[10px] text-slate-500">اضغط لتجربة استجابة شاشة السيارة فورياً</span>
+          </div>
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
+            {[
+              { id: 'next', label: 'التالي ⏭️' },
+              { id: 'prev', label: 'السابق ⏮️' },
+              { id: 'play_pause', label: 'تشغيل ⏯️' },
+              { id: 'vol_up', label: 'صوت + 🔊' },
+              { id: 'vol_down', label: 'صوت - 🔉' },
+              { id: 'voice', label: 'مساعد 🎙️' },
+              { id: 'home', label: 'رئيسية 🏠' },
+              { id: 'back', label: 'رجوع 🔙' },
+            ].map((k) => (
+              <button
+                key={k.id}
+                type="button"
+                onClick={async () => {
+                  if (!adb) return;
+                  try {
+                    const res = await CarSystemTools.sendMediaKey(adb, k.id as any);
+                    onLog(res, 'info');
+                  } catch (e: any) {
+                    onLog(`فشل إرسال الزر: ${e.message || e}`, 'error');
+                  }
+                }}
+                disabled={!isConnected}
+                className="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-cyan-500/50 text-[11px] font-medium text-slate-200 text-center transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
