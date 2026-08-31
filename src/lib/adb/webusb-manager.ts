@@ -130,23 +130,28 @@ export class WebUsbAdbManager {
   }
 
   public async execShell(adb: Adb, command: string): Promise<string> {
+    // Attempt 1: Using createSocketAndWait on shell: service
     try {
-      const socket = await adb.createSocket(`shell:${command}`);
-      const reader = socket.readable.getReader();
-      const decoder = new TextDecoder();
-      let output = '';
+      const output = await adb.createSocketAndWait(`shell:${command}`);
+      return output.trim();
+    } catch (e1: any) {
+      const errStr1 = e1?.message || String(e1);
+      // If socket failed due to transient state, wait 200ms and try exec: service or noneProtocol
+      await new Promise((r) => setTimeout(r, 200));
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          output += decoder.decode(value, { stream: true });
+      try {
+        const output2 = await adb.createSocketAndWait(`exec:${command}`);
+        return output2.trim();
+      } catch (e2: any) {
+        // Attempt 3: noneProtocol subprocess
+        try {
+          const parts = command.split(' ');
+          const output3 = await adb.subprocess.noneProtocol.spawnWaitText(parts);
+          return output3.trim();
+        } catch {
+          throw new Error(`خطأ أثناء تنفيذ الأمر "${command}": ${errStr1}`);
         }
       }
-      output += decoder.decode();
-      return output;
-    } catch (e: any) {
-      throw new Error(`خطأ أثناء تنفيذ الأمر "${command}": ${e.message || e}`);
     }
   }
 

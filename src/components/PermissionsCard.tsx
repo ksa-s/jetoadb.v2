@@ -609,16 +609,19 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
               💡 أزرار (التالي/السابق/تشغيل) ترسل أوامر MediaSession + Intents لمشغل الموسيقى النشط
             </span>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-10 gap-1.5">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-1.5">
             {[
               { id: 'next', label: 'التالي ⏭️', desc: 'Next Track' },
               { id: 'prev', label: 'السابق ⏮️', desc: 'Previous Track' },
-              { id: 'play_pause', label: 'تشغيل ⏯️', desc: 'Play / Pause' },
+              { id: 'play_pause', label: 'تبديل ⏯️', desc: 'Play / Pause Toggle' },
+              { id: 'play', label: 'تشغيل ▶️', desc: 'Direct Play' },
+              { id: 'pause', label: 'إيقاف ⏸️', desc: 'Direct Pause' },
               { id: 'vol_up', label: 'صوت + 🔊', desc: 'Vol Up' },
               { id: 'vol_down', label: 'صوت - 🔉', desc: 'Vol Down' },
               { id: 'mute', label: 'كتم 🔇', desc: 'Mute' },
               { id: 'voice', label: 'مساعد 🎙️', desc: 'Voice Assist' },
               { id: 'call', label: 'اتصال 📞', desc: 'Call' },
+              { id: 'end_call', label: 'إنهاء 🔴', desc: 'End Call' },
               { id: 'home', label: 'رئيسية 🏠', desc: 'Home' },
               { id: 'back', label: 'رجوع 🔙', desc: 'Back' },
             ].map((k) => (

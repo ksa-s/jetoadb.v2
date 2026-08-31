@@ -229,52 +229,119 @@ export class CarSystemTools {
    */
   public static async sendMediaKey(
     adb: Adb,
-    key: 'next' | 'prev' | 'play_pause' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back' | 'call' | 'end_call'
+    key: 'next' | 'prev' | 'play_pause' | 'play' | 'pause' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back' | 'call' | 'end_call'
   ): Promise<string> {
-    const keyActions: Record<string, { cmd: string; name: string }> = {
+    const keyActions: Record<string, { commands: string[]; name: string }> = {
       next: {
-        cmd: 'input keyevent 87 ; input keyevent 125 ; cmd media_session dispatch --key next 2>/dev/null ; am broadcast -a com.android.music.musicservicecommand --es command next 2>/dev/null ; am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 87 2>/dev/null',
         name: 'التالي (Next Track)',
+        commands: [
+          'input keyevent 87',
+          'media dispatch next',
+          'cmd media_session dispatch next',
+          'am broadcast -a com.android.music.musicservicecommand -e command next',
+          'am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 87',
+          'am broadcast -a com.spotify.mobile.android.ui.widget.NEXT',
+          'input keyevent 125',
+          'input keyevent 90',
+        ],
       },
       prev: {
-        cmd: 'input keyevent 88 ; input keyevent 124 ; cmd media_session dispatch --key previous 2>/dev/null ; am broadcast -a com.android.music.musicservicecommand --es command previous 2>/dev/null ; am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 88 2>/dev/null',
         name: 'السابق (Previous Track)',
+        commands: [
+          'input keyevent 88',
+          'media dispatch previous',
+          'cmd media_session dispatch previous',
+          'am broadcast -a com.android.music.musicservicecommand -e command previous',
+          'am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 88',
+          'am broadcast -a com.spotify.mobile.android.ui.widget.PREVIOUS',
+          'input keyevent 124',
+          'input keyevent 89',
+        ],
       },
       play_pause: {
-        cmd: 'input keyevent 85 ; input keyevent 126 ; cmd media_session dispatch --key play-pause 2>/dev/null ; am broadcast -a com.android.music.musicservicecommand --es command togglepause 2>/dev/null ; am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 85 2>/dev/null',
         name: 'تشغيل/إيقاف مؤقت (Play/Pause)',
+        commands: [
+          'input keyevent 85',
+          'input keyevent 79',
+          'media dispatch play-pause',
+          'cmd media_session dispatch play-pause',
+          'am broadcast -a com.android.music.musicservicecommand -e command togglepause',
+          'am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 85',
+          'am broadcast -a com.spotify.mobile.android.ui.widget.PLAY',
+        ],
+      },
+      play: {
+        name: 'تشغيل (Play)',
+        commands: [
+          'input keyevent 126',
+          'input keyevent 85',
+          'media dispatch play',
+          'cmd media_session dispatch play',
+          'am broadcast -a com.android.music.musicservicecommand -e command play',
+        ],
+      },
+      pause: {
+        name: 'إيقاف مؤقت (Pause)',
+        commands: [
+          'input keyevent 127',
+          'input keyevent 86',
+          'media dispatch pause',
+          'cmd media_session dispatch pause',
+          'am broadcast -a com.android.music.musicservicecommand -e command pause',
+        ],
       },
       vol_up: {
-        cmd: 'input keyevent 24 ; cmd media_session volume --adj raise 2>/dev/null',
         name: 'رفع الصوت (Volume Up)',
+        commands: [
+          'input keyevent 24',
+          'media dispatch volume-up',
+          'cmd media_session volume --adj raise',
+        ],
       },
       vol_down: {
-        cmd: 'input keyevent 25 ; cmd media_session volume --adj lower 2>/dev/null',
         name: 'خفض الصوت (Volume Down)',
+        commands: [
+          'input keyevent 25',
+          'media dispatch volume-down',
+          'cmd media_session volume --adj lower',
+        ],
       },
       mute: {
-        cmd: 'input keyevent 164 ; input keyevent 91 ; cmd media_session volume --adj mute 2>/dev/null',
         name: 'كتم الصوت (Mute)',
+        commands: [
+          'input keyevent 164',
+          'input keyevent 91',
+          'cmd media_session volume --adj mute',
+        ],
       },
       voice: {
-        cmd: 'input keyevent 231 2>/dev/null ; input keyevent 219 2>/dev/null ; input keyevent 84 2>/dev/null ; am start -a android.intent.action.VOICE_COMMAND 2>/dev/null || am start -a android.intent.action.ASSIST 2>/dev/null',
         name: 'المساعد الصوتي (Voice Assist)',
+        commands: [
+          'input keyevent 231',
+          'input keyevent 219',
+          'input keyevent 84',
+          'am start -a android.intent.action.VOICE_COMMAND',
+          'am start -a android.intent.action.ASSIST',
+        ],
       },
       home: {
-        cmd: 'input keyevent 3',
         name: 'الرئيسية (Home)',
+        commands: ['input keyevent 3'],
       },
       back: {
-        cmd: 'input keyevent 4',
         name: 'رجوع (Back)',
+        commands: ['input keyevent 4'],
       },
       call: {
-        cmd: 'input keyevent 5 ; am start -a android.intent.action.CALL_BUTTON 2>/dev/null',
         name: 'الرد على المكالمة (Call)',
+        commands: [
+          'input keyevent 5',
+          'am start -a android.intent.action.CALL_BUTTON',
+        ],
       },
       end_call: {
-        cmd: 'input keyevent 6',
         name: 'إنهاء المكالمة (End Call)',
+        commands: ['input keyevent 6'],
       },
     };
 
@@ -284,7 +351,9 @@ export class CarSystemTools {
     }
 
     try {
-      await this.exec(adb, target.cmd);
+      for (const cmd of target.commands) {
+        await this.exec(adb, cmd).catch(() => {});
+      }
       return `تم إرسال إشارة ${target.name} وتوجيهها لميديا ومحرك صوت السيارة بنجاح.`;
     } catch (e: any) {
       throw new Error(`فشل إرسال زر التحكم (${target.name}): ${e.message || e}`);
@@ -562,26 +631,22 @@ export class CarSystemTools {
 
   private static async exec(adb: Adb, command: string): Promise<string> {
     try {
-      const socket = await adb.createSocket(`shell:${command}`);
-      const reader = socket.readable.getReader();
-      const decoder = new TextDecoder();
-      let output = '';
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) output += decoder.decode(value, { stream: true });
-        }
-        output += decoder.decode();
-      } finally {
-        reader.releaseLock();
-        try {
-          await socket.close();
-        } catch {}
-      }
+      const output = await adb.createSocketAndWait(`shell:${command}`);
       return output.trim();
-    } catch (e: any) {
-      throw new Error(`خطأ تنفيذ: ${e.message || e}`);
+    } catch {
+      await new Promise((r) => setTimeout(r, 150));
+      try {
+        const output2 = await adb.createSocketAndWait(`exec:${command}`);
+        return output2.trim();
+      } catch {
+        try {
+          const parts = command.split(' ');
+          const output3 = await adb.subprocess.noneProtocol.spawnWaitText(parts);
+          return output3.trim();
+        } catch {
+          return '';
+        }
+      }
     }
   }
 }
