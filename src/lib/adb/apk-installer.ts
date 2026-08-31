@@ -82,11 +82,12 @@ export class ApkInstaller {
       await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
     } catch {}
 
-    // Candidate paths in order of reliability on automotive head units
+    // Candidate paths in order of reliability on automotive head units (matching official automotive manual)
     const candidatePaths = [
+      `/sdcard/Download/${safeName}`,
+      `/sdcard/Download/app_install.apk`,
       `/data/local/tmp/${safeName}`,
       `/data/local/tmp/app_install.apk`,
-      `/sdcard/Download/${safeName}`,
       `/sdcard/${safeName}`,
     ];
 
@@ -115,7 +116,7 @@ export class ApkInstaller {
 
     if (!pushSuccess || !targetPath) {
       // Fallback: Push via chunked shell socket
-      targetPath = `/data/local/tmp/app_install.apk`;
+      targetPath = `/sdcard/Download/app_install.apk`;
       onLog?.('جاري محاولة الرفع عبر قناة Shell المباشرة البديلة...', 'info');
       try {
         await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
@@ -138,33 +139,73 @@ export class ApkInstaller {
     // Grace period for USB endpoint stabilization
     await new Promise((r) => setTimeout(r, 250));
 
-    onLog?.(`تم تجهيز الملف. جاري تنفيذ أوامر التثبيت على شاشة السيارة...`, 'info');
-    onProgress?.(90, 'installing', 'تشغيل أمر التثبيت عبر مدير حزم الشاشة...');
+    onLog?.(`تم تجهيز الملف (${size} بايت). جاري تنفيذ أمر التثبيت التدبيبي (Cat Stream Pipe) للشاشة...`, 'info');
+    onProgress?.(90, 'installing', 'تشغيل أمر التثبيت عبر التدفق المباشر...');
 
-    const pm = new PackageManager(adb);
     let isSuccess = false;
     let lastOutput = '';
 
-    // Stage 1: Official PackageManager.install with automotive flags
-    try {
-      onLog?.(`[محاولة 1/6] تثبيت عبر مدير الحزم (صلاحيات كاملة وتجاوز الإصدار)...`, 'info');
-      const pmRes = await pm.install([targetPath], {
-        allowTest: true,
-        requestDowngrade: true,
-        grantRuntimePermissions: true,
-      });
-      lastOutput = pmRes || 'Success';
-      onLog?.(`استجابة الشاشة: ${lastOutput}`, 'success');
-      if (lastOutput.toLowerCase().includes('success')) {
-        isSuccess = true;
+    // Stage 1: Official Automotive Head Unit Method (cat <file> | pm install -S <size>)
+    // As documented in automotive engineering guides for Changan / Haval / Geely / Jetour / Desay SV
+    const pipedCommands = [
+      `cat "${targetPath}" | pm install -r -d -g -t -S ${size}`,
+      `cat "${targetPath}" | pm install -r -g -t -S ${size}`,
+      `cat "${targetPath}" | pm install -r -S ${size}`,
+      `cat "${targetPath}" | pm install -S ${size}`,
+      `cd /sdcard/Download && cat "./${safeName}" | pm install -S ${size}`,
+      `cat "${targetPath}" | cmd package install -r -d -g -t -S ${size}`,
+      `cat "${targetPath}" | cmd package install -r -S ${size}`,
+      `cat "${targetPath}" | cmd package install -S ${size}`,
+    ];
+
+    for (let i = 0; i < pipedCommands.length; i++) {
+      const cmd = pipedCommands[i];
+      try {
+        onLog?.(`[طريقة الشاشات الذكية ${i + 1}/${pipedCommands.length}] تنفيذ: ${cmd}`, 'info');
+        const output = await this.execShell(adb, cmd);
+        lastOutput = output.trim();
+        const isCmdSuccess = lastOutput.toLowerCase().includes('success');
+        onLog?.(`استجابة الشاشة: ${lastOutput || '(لا توجد استجابة نصية)'}`, isCmdSuccess ? 'success' : 'info');
+
+        if (isCmdSuccess) {
+          isSuccess = true;
+          break;
+        }
+
+        if (this.isFatalInstallError(lastOutput)) {
+          break;
+        }
+      } catch (ePipe: any) {
+        lastOutput = ePipe?.message || String(ePipe);
+        onLog?.(`تنبيه: ${lastOutput}`, 'info');
       }
-    } catch (ePm1: any) {
-      lastOutput = ePm1?.message || String(ePm1);
-      if (lastOutput.toLowerCase().includes('success')) {
-        isSuccess = true;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const pm = new PackageManager(adb);
+
+    // Stage 2: Direct PackageManager.install with automotive flags
+    if (!isSuccess && !this.isFatalInstallError(lastOutput)) {
+      try {
+        onLog?.(`[محاولة مدير الحزم المباشر] تثبيت عبر PackageManager...`, 'info');
+        const pmRes = await pm.install([targetPath], {
+          allowTest: true,
+          requestDowngrade: true,
+          grantRuntimePermissions: true,
+        });
+        lastOutput = pmRes || 'Success';
         onLog?.(`استجابة الشاشة: ${lastOutput}`, 'success');
-      } else {
-        onLog?.(`مدير الحزم (1): ${lastOutput}`, 'info');
+        if (lastOutput.toLowerCase().includes('success')) {
+          isSuccess = true;
+        }
+      } catch (ePm1: any) {
+        lastOutput = ePm1?.message || String(ePm1);
+        if (lastOutput.toLowerCase().includes('success')) {
+          isSuccess = true;
+          onLog?.(`استجابة الشاشة: ${lastOutput}`, 'success');
+        } else {
+          onLog?.(`مدير الحزم: ${lastOutput}`, 'info');
+        }
       }
     }
 
