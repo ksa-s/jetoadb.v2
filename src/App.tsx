@@ -12,6 +12,7 @@ import { LogTerminal } from './components/LogTerminal';
 import { CarToolsModal } from './components/CarToolsModal';
 import { AppManagerModal } from './components/AppManagerModal';
 import { PermissionsModal } from './components/PermissionsModal';
+import { SteeringWheelModal } from './components/SteeringWheelModal';
 import { HelpAndGuideModal } from './components/HelpAndGuideModal';
 import { Adb } from '@yume-chan/adb';
 
@@ -35,6 +36,7 @@ export default function App() {
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [isAppsOpen, setIsAppsOpen] = useState(false);
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
+  const [isSteeringWheelOpen, setIsSteeringWheelOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Logs
@@ -274,6 +276,7 @@ export default function App() {
         onOpenTools={() => setIsToolsOpen(true)}
         onOpenApps={() => setIsAppsOpen(true)}
         onOpenPermissions={() => setIsPermissionsOpen(true)}
+        onOpenSteeringWheel={() => setIsSteeringWheelOpen(true)}
         onOpenHelp={() => setIsHelpOpen(true)}
       />
 
@@ -335,6 +338,14 @@ export default function App() {
       </footer>
 
       {/* Modals */}
+      <SteeringWheelModal
+        isOpen={isSteeringWheelOpen}
+        onClose={() => setIsSteeringWheelOpen(false)}
+        adb={adb}
+        isConnected={isConnected}
+        onLog={addLog}
+      />
+
       <PermissionsModal
         isOpen={isPermissionsOpen}
         onClose={() => setIsPermissionsOpen(false)}

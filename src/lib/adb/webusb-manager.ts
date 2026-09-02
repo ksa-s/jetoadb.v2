@@ -129,27 +129,76 @@ export class WebUsbAdbManager {
     };
   }
 
-  public async execShell(adb: Adb, command: string): Promise<string> {
-    // Attempt 1: Using createSocketAndWait on shell: service
+  public async execShell(adb: Adb, command: string, timeoutMs = 45000): Promise<string> {
+    const cleanCommand = command.trim();
+    if (!cleanCommand) return '';
+
+    // Strategy 1: Direct createSocketAndWait with shell: prefix (fastest, standard)
     try {
-      const output = await adb.createSocketAndWait(`shell:${command}`);
-      return output.trim();
+      const output = await Promise.race([
+        adb.createSocketAndWait(`shell:${cleanCommand}`),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ADB_TIMEOUT')), timeoutMs)),
+      ]);
+      return (output || '').trim();
     } catch (e1: any) {
       const errStr1 = e1?.message || String(e1);
-      // If socket failed due to transient state, wait 200ms and try exec: service or noneProtocol
-      await new Promise((r) => setTimeout(r, 200));
-
+      
+      // Strategy 2: Interactive shell session fallback (bypasses adbd exec/pipe/socket restrictions)
       try {
-        const output2 = await adb.createSocketAndWait(`exec:${command}`);
-        return output2.trim();
+        await new Promise((r) => setTimeout(r, 100));
+        const socket = await adb.createSocket('shell:');
+        const writer = socket.writable.getWriter();
+        const reader = socket.readable.getReader();
+        const decoder = new TextDecoder();
+        const endMarker = `__SAM_DONE_${Math.random().toString(36).substring(2, 7)}__`;
+
+        const cmdPayload = new TextEncoder().encode(`${cleanCommand}\necho "${endMarker}:$?"\n`);
+        await writer.write(cmdPayload);
+
+        let fullOutput = '';
+        const readPromise = (async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              fullOutput += decoder.decode(value, { stream: true });
+              if (fullOutput.includes(endMarker)) {
+                break;
+              }
+            }
+          }
+        })();
+
+        await Promise.race([
+          readPromise,
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('INTERACTIVE_TIMEOUT')), timeoutMs)),
+        ]);
+
+        try { await writer.close(); } catch {}
+        try { await reader.cancel(); } catch {}
+        try { await socket.close(); } catch {}
+
+        const markerIdx = fullOutput.indexOf(endMarker);
+        let clean = markerIdx !== -1 ? fullOutput.substring(0, markerIdx) : fullOutput;
+        if (clean.startsWith(cleanCommand)) {
+          clean = clean.substring(cleanCommand.length);
+        }
+        return clean.trim();
       } catch (e2: any) {
-        // Attempt 3: noneProtocol subprocess
+        // Strategy 3: exec: prefix
         try {
-          const parts = command.split(' ');
-          const output3 = await adb.subprocess.noneProtocol.spawnWaitText(parts);
-          return output3.trim();
+          await new Promise((r) => setTimeout(r, 100));
+          const output3 = await adb.createSocketAndWait(`exec:${cleanCommand}`);
+          return (output3 || '').trim();
         } catch {
-          throw new Error(`خطأ أثناء تنفيذ الأمر "${command}": ${errStr1}`);
+          // Strategy 4: Subprocess noneProtocol
+          try {
+            const parts = cleanCommand.split(' ');
+            const output4 = await adb.subprocess.noneProtocol.spawnWaitText(parts);
+            return (output4 || '').trim();
+          } catch (e4: any) {
+            throw new Error(`خطأ في تنفيذ الأمر عبر Shell: ${e4?.message || e2?.message || errStr1}`);
+          }
         }
       }
     }

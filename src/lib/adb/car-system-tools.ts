@@ -1,5 +1,6 @@
 import { Adb } from '@yume-chan/adb';
 import { InstalledApp } from '../../types';
+import { adbManager } from './webusb-manager';
 
 export class CarSystemTools {
   /**
@@ -229,7 +230,7 @@ export class CarSystemTools {
    */
   public static async sendMediaKey(
     adb: Adb,
-    key: 'next' | 'prev' | 'play_pause' | 'play' | 'pause' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back' | 'call' | 'end_call'
+    key: 'next' | 'prev' | 'play_pause' | 'play' | 'pause' | 'stop' | 'vol_up' | 'vol_down' | 'mute' | 'voice' | 'home' | 'back' | 'call' | 'end_call'
   ): Promise<string> {
     const keyActions: Record<string, { commands: string[]; name: string }> = {
       next: {
@@ -288,6 +289,17 @@ export class CarSystemTools {
           'media dispatch pause',
           'cmd media_session dispatch pause',
           'am broadcast -a com.android.music.musicservicecommand -e command pause',
+        ],
+      },
+      stop: {
+        name: 'إيقاف كامل (Stop)',
+        commands: [
+          'input keyevent 86',
+          'media dispatch stop',
+          'cmd media_session dispatch stop',
+          'input keyevent 127',
+          'am broadcast -a com.android.music.musicservicecommand -e command stop',
+          'am broadcast -a android.intent.action.MEDIA_BUTTON --ei android.intent.extra.KEY_EVENT 86',
         ],
       },
       vol_up: {
@@ -439,13 +451,41 @@ export class CarSystemTools {
       logs.push('✓ تم تفعيل خدمة مراقبة الإشعارات وأسماء المقاطع الصوتية');
     } catch {}
 
-    // 4. Activate CAN-Bus & Car Audio / Input Verbose Logging (for Jetour T2, Desay SV, Haval, Geely)
+    // 4. Whitelist all major Car Media Players from background restrictions & optimize audio routing
+    const mediaPlayers = [
+      'com.spotify.music',
+      'com.google.android.apps.youtube.music',
+      'ru.yandex.music',
+      'com.anghami',
+      'com.maxmpz.audioplayer',
+      'com.apple.android.music',
+      'ru.vk.vkclient',
+      'com.soundcloud.android',
+    ];
+    for (const mp of mediaPlayers) {
+      try {
+        await this.exec(adb, `dumpsys deviceidle whitelist +${mp} 2>/dev/null`);
+        await this.exec(adb, `appops set ${mp} RUN_IN_BACKGROUND allow 2>/dev/null`);
+        await this.exec(adb, `appops set ${mp} RUN_ANY_IN_BACKGROUND allow 2>/dev/null`);
+      } catch {}
+    }
+
+    // 5. Route Media Button Receiver & release OEM radio lock
+    try {
+      await this.exec(adb, 'settings put secure media_button_receiver com.arlosoft.macrodroid/.triggers.services.AccessibilityService 2>/dev/null');
+      await this.exec(adb, 'cmd media_session set-media-button-receiver com.arlosoft.macrodroid 2>/dev/null');
+      await this.exec(adb, 'am broadcast -a android.media.AUDIO_BECOMING_NOISY 2>/dev/null');
+      logs.push('✓ تم تحرير قفل مسار الصوت وتوجيه مستقبل أزرار الميديا (Media Button Receiver) بنجاح');
+    } catch {}
+
+    // 6. Activate CAN-Bus & Car Audio / Input Verbose Logging (for Jetour T2, Desay SV, Haval, Geely, Changan)
     const logProps = [
       'setprop log.tag.CarInputService VERBOSE',
       'setprop log.tag.CarAudioService VERBOSE',
       'setprop log.tag.KeyEvent VERBOSE',
       'setprop log.tag.CANBUS VERBOSE',
       'setprop log.tag.SteeringWheel VERBOSE',
+      'setprop persist.sys.canbus.keylog 1',
     ];
     for (const prop of logProps) {
       try {
@@ -454,13 +494,13 @@ export class CarSystemTools {
     }
     logs.push('✓ تم تفعيل بث إشارات أزرار الدركسون وقنوات CAN-Bus إلى سجلات النظام (LogCat Verbose)');
 
-    // 5. Trigger app start in foreground
+    // 7. Trigger app start in foreground
     try {
       await this.exec(adb, 'am start -n com.arlosoft.macrodroid/.HomeScreenActivity 2>/dev/null');
       await this.exec(adb, 'am startservice -n com.arlosoft.macrodroid/.MacroDroidService 2>/dev/null');
     } catch {}
 
-    logs.push('=== اكتمل إعداد وبرمجة أزرار المقود بنجاح! جاهز للاستخدام ===');
+    logs.push('=== اكتمل إعداد وبرمجة أزرار المقود بنجاح! تم إصلاح أزرار التالي، السابق، والتشغيل/الإيقاف ===');
     return logs;
   }
 
@@ -631,22 +671,9 @@ export class CarSystemTools {
 
   private static async exec(adb: Adb, command: string): Promise<string> {
     try {
-      const output = await adb.createSocketAndWait(`shell:${command}`);
-      return output.trim();
+      return await adbManager.execShell(adb, command);
     } catch {
-      await new Promise((r) => setTimeout(r, 150));
-      try {
-        const output2 = await adb.createSocketAndWait(`exec:${command}`);
-        return output2.trim();
-      } catch {
-        try {
-          const parts = command.split(' ');
-          const output3 = await adb.subprocess.noneProtocol.spawnWaitText(parts);
-          return output3.trim();
-        } catch {
-          return '';
-        }
-      }
+      return '';
     }
   }
 }

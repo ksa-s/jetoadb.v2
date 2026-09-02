@@ -609,16 +609,17 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
               💡 أزرار (التالي/السابق/تشغيل) ترسل أوامر MediaSession + Intents لمشغل الموسيقى النشط
             </span>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-1.5">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 lg:grid-cols-13 gap-1.5">
             {[
-              { id: 'next', label: 'التالي ⏭️', desc: 'Next Track' },
-              { id: 'prev', label: 'السابق ⏮️', desc: 'Previous Track' },
-              { id: 'play_pause', label: 'تبديل ⏯️', desc: 'Play / Pause Toggle' },
-              { id: 'play', label: 'تشغيل ▶️', desc: 'Direct Play' },
-              { id: 'pause', label: 'إيقاف ⏸️', desc: 'Direct Pause' },
-              { id: 'vol_up', label: 'صوت + 🔊', desc: 'Vol Up' },
-              { id: 'vol_down', label: 'صوت - 🔉', desc: 'Vol Down' },
-              { id: 'mute', label: 'كتم 🔇', desc: 'Mute' },
+              { id: 'next', label: 'التالي ⏭️', desc: 'Next Track (87)' },
+              { id: 'prev', label: 'السابق ⏮️', desc: 'Previous Track (88)' },
+              { id: 'play_pause', label: 'تشغيل/إيقاف ⏯️', desc: 'Play / Pause (85)' },
+              { id: 'play', label: 'تشغيل ▶️', desc: 'Direct Play (126)' },
+              { id: 'pause', label: 'إيقاف مؤقت ⏸️', desc: 'Direct Pause (127)' },
+              { id: 'stop', label: 'إيقاف كامل ⏹️', desc: 'Stop Media (86)' },
+              { id: 'vol_up', label: 'صوت + 🔊', desc: 'Vol Up (24)' },
+              { id: 'vol_down', label: 'صوت - 🔉', desc: 'Vol Down (25)' },
+              { id: 'mute', label: 'كتم 🔇', desc: 'Mute (164)' },
               { id: 'voice', label: 'مساعد 🎙️', desc: 'Voice Assist' },
               { id: 'call', label: 'اتصال 📞', desc: 'Call' },
               { id: 'end_call', label: 'إنهاء 🔴', desc: 'End Call' },

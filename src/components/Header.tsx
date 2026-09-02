@@ -1,6 +1,6 @@
 import React from 'react';
 import { DeviceInfo } from '../types';
-import { Power, Cpu, Smartphone, Monitor, Car, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Power, Cpu, Smartphone, Monitor, Car, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
 
 interface HeaderProps {
   deviceInfo: DeviceInfo | null;
@@ -11,6 +11,7 @@ interface HeaderProps {
   onOpenTools: () => void;
   onOpenApps: () => void;
   onOpenPermissions?: () => void;
+  onOpenSteeringWheel?: () => void;
   onOpenHelp: () => void;
 }
 
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTools,
   onOpenApps,
   onOpenPermissions,
+  onOpenSteeringWheel,
   onOpenHelp,
 }) => {
   return (
@@ -78,7 +80,16 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Actions & Connection Status on Desktop */}
         <div className="flex items-center flex-wrap gap-2 w-full md:w-auto justify-end">
           {/* Quick nav links */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={onOpenSteeringWheel}
+              disabled={!isConnected}
+              className="px-3 py-1.5 rounded-lg bg-purple-950/80 hover:bg-purple-900/90 disabled:opacity-40 disabled:cursor-not-allowed border border-purple-500/50 text-purple-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm shadow-purple-950 cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-purple-400" />
+              <span>أزرار الدركسون</span>
+            </button>
+
             <button
               onClick={onOpenPermissions}
               disabled={!isConnected}

@@ -2,6 +2,7 @@ import { Adb } from '@yume-chan/adb';
 import { PackageManager } from '@yume-chan/android-bin';
 import { WrapReadableStream, TransformStream } from '@yume-chan/stream-extra';
 import { InstallMethod } from '../../types';
+import { adbManager } from './webusb-manager';
 
 export interface InstallProgressCallback {
   (progress: number, stage: 'uploading' | 'installing' | 'processing', message?: string): void;
@@ -139,33 +140,34 @@ export class ApkInstaller {
     // Grace period for USB endpoint stabilization
     await new Promise((r) => setTimeout(r, 250));
 
-    onLog?.(`تم تجهيز الملف (${size} بايت). جاري تنفيذ أمر التثبيت التدبيبي (Cat Stream Pipe) للشاشة...`, 'info');
-    onProgress?.(90, 'installing', 'تشغيل أمر التثبيت عبر التدفق المباشر...');
+    onLog?.(`تم تجهيز الملف (${(size / (1024 * 1024)).toFixed(1)} MB). جاري تنفيذ أوامر التثبيت على نظام الشاشة...`, 'info');
+    onProgress?.(90, 'installing', 'تشغيل أمر التثبيت على شاشة السيارة...');
 
     let isSuccess = false;
     let lastOutput = '';
 
-    // Stage 1: Official Automotive Head Unit Method (cat <file> | pm install -S <size>)
-    // As documented in automotive engineering guides for Changan / Haval / Geely / Jetour / Desay SV
-    const pipedCommands = [
+    // Direct automotive PM installation commands in order of highest success rate
+    const installCommands = [
+      `pm install -r -d -g -t "${targetPath}"`,
+      `pm install -r -g -t "${targetPath}"`,
+      `pm install -r -d "${targetPath}"`,
+      `pm install -r "${targetPath}"`,
+      `pm install "${targetPath}"`,
+      `cmd package install -r -d -g -t "${targetPath}"`,
+      `cmd package install -r "${targetPath}"`,
       `cat "${targetPath}" | pm install -r -d -g -t -S ${size}`,
       `cat "${targetPath}" | pm install -r -g -t -S ${size}`,
-      `cat "${targetPath}" | pm install -r -S ${size}`,
       `cat "${targetPath}" | pm install -S ${size}`,
-      `cd /sdcard/Download && cat "./${safeName}" | pm install -S ${size}`,
-      `cat "${targetPath}" | cmd package install -r -d -g -t -S ${size}`,
-      `cat "${targetPath}" | cmd package install -r -S ${size}`,
-      `cat "${targetPath}" | cmd package install -S ${size}`,
     ];
 
-    for (let i = 0; i < pipedCommands.length; i++) {
-      const cmd = pipedCommands[i];
+    for (let i = 0; i < installCommands.length; i++) {
+      const cmd = installCommands[i];
       try {
-        onLog?.(`[طريقة الشاشات الذكية ${i + 1}/${pipedCommands.length}] تنفيذ: ${cmd}`, 'info');
+        onLog?.(`[محاولة تثبيت ${i + 1}/${installCommands.length}] تنفيذ: ${cmd}`, 'info');
         const output = await this.execShell(adb, cmd);
         lastOutput = output.trim();
         const isCmdSuccess = lastOutput.toLowerCase().includes('success');
-        onLog?.(`استجابة الشاشة: ${lastOutput || '(لا توجد استجابة نصية)'}`, isCmdSuccess ? 'success' : 'info');
+        onLog?.(`استجابة الشاشة: ${lastOutput || '(تم إرسال الأمر بنجاح)'}`, isCmdSuccess ? 'success' : 'info');
 
         if (isCmdSuccess) {
           isSuccess = true;
@@ -175,8 +177,8 @@ export class ApkInstaller {
         if (this.isFatalInstallError(lastOutput)) {
           break;
         }
-      } catch (ePipe: any) {
-        lastOutput = ePipe?.message || String(ePipe);
+      } catch (ePm: any) {
+        lastOutput = ePm?.message || String(ePm);
         onLog?.(`تنبيه: ${lastOutput}`, 'info');
       }
       await new Promise((r) => setTimeout(r, 200));
@@ -184,27 +186,25 @@ export class ApkInstaller {
 
     const pm = new PackageManager(adb);
 
-    // Stage 2: Direct PackageManager.install with automotive flags
+    // Secondary Stage: PackageManager library API fallback
     if (!isSuccess && !this.isFatalInstallError(lastOutput)) {
       try {
-        onLog?.(`[محاولة مدير الحزم المباشر] تثبيت عبر PackageManager...`, 'info');
+        onLog?.(`[مدير الحزم البرمجي] تجربة التثبيت عبر مكتبة PackageManager...`, 'info');
         const pmRes = await pm.install([targetPath], {
           allowTest: true,
           requestDowngrade: true,
           grantRuntimePermissions: true,
         });
         lastOutput = pmRes || 'Success';
-        onLog?.(`استجابة الشاشة: ${lastOutput}`, 'success');
         if (lastOutput.toLowerCase().includes('success')) {
           isSuccess = true;
+          onLog?.(`استجابة مدير الحزم: ${lastOutput}`, 'success');
         }
-      } catch (ePm1: any) {
-        lastOutput = ePm1?.message || String(ePm1);
+      } catch (ePmLib: any) {
+        lastOutput = ePmLib?.message || String(ePmLib);
         if (lastOutput.toLowerCase().includes('success')) {
           isSuccess = true;
           onLog?.(`استجابة الشاشة: ${lastOutput}`, 'success');
-        } else {
-          onLog?.(`مدير الحزم: ${lastOutput}`, 'info');
         }
       }
     }
@@ -597,24 +597,7 @@ export class ApkInstaller {
    * Helper to execute a command over standard ADB shell with clean socket termination
    */
   public static async execShell(adb: Adb, command: string): Promise<string> {
-    try {
-      const output = await adb.createSocketAndWait(`shell:${command}`);
-      return output.trim();
-    } catch {
-      await new Promise((r) => setTimeout(r, 150));
-      try {
-        const output2 = await adb.createSocketAndWait(`exec:${command}`);
-        return output2.trim();
-      } catch {
-        try {
-          const parts = command.split(' ');
-          const output3 = await adb.subprocess.noneProtocol.spawnWaitText(parts);
-          return output3.trim();
-        } catch (e3: any) {
-          throw new Error(`خطأ في تنفيذ الأمر عبر Shell: ${e3?.message || e3}`);
-        }
-      }
-    }
+    return adbManager.execShell(adb, command);
   }
 
   /**
