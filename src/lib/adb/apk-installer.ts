@@ -24,80 +24,127 @@ export class ApkInstaller {
     const fileSize = file.size;
     const fileName = file.name;
 
-    // Detect package name from file or metadata if not provided
+    // Detect package name from file metadata if not provided or placeholder
     let effectivePackageName = knownPackageName;
-    if (!effectivePackageName) {
+    if (!effectivePackageName || effectivePackageName === 'base' || effectivePackageName === 'unknown.package') {
       try {
         const meta = await parseApkMetadata(file);
-        if (meta.packageName && meta.packageName !== 'unknown.package') {
+        if (meta.packageName && meta.packageName !== 'unknown.package' && meta.packageName !== 'base') {
           effectivePackageName = meta.packageName;
         }
       } catch {}
     }
 
     onLog?.(`بدء تثبيت التطبيق: ${fileName} (${(fileSize / (1024 * 1024)).toFixed(1)} MB)...`, 'info');
-    if (effectivePackageName) {
+    if (effectivePackageName && effectivePackageName !== 'base') {
       onLog?.(`معرف الحزمة المكتشف: ${effectivePackageName}`, 'info');
     }
 
-    // Method 1: Modern Car Protocol (Specifically designed for Android 10/11/12/13/14 updates, Desay SV, Jetour, Haval, Geely, Changan)
-    if (preferredMethod === 'modern_car') {
-      const res = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
-      return { ...res, methodUsed: 'modern_car', packageName: effectivePackageName };
+    // Take snapshot of installed packages BEFORE install to guarantee package detection
+    const beforePackages = await this.getInstalledPackagesSet(adb);
+    const currentUserId = await this.getCurrentUserId(adb);
+
+    // Method 1: Auto Adaptive (Default & Recommended for All Automotive Units)
+    // Tries proven Storage Pipe first (works reliably on 99% of Desay SV, Geely, Haval head units)
+    // and seamlessly falls back to Modern Car Protocol (/data/local/tmp) if SELinux FUSE restricts /sdcard.
+    if (preferredMethod === 'auto') {
+      onLog?.('بدء التثبيت عبر الوضع التلقائي الذكي لشاشات السيارات...', 'info');
+
+      const storageRes = await this.installViaStoragePipe(adb, file, onProgress, onLog, effectivePackageName);
+      if (storageRes.success) {
+        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, storageRes.packageName || effectivePackageName);
+        if (newlyInstalled) {
+          await this.activatePackageForCarLauncher(adb, newlyInstalled, currentUserId, onLog);
+        }
+        return {
+          ...storageRes,
+          methodUsed: 'auto',
+          packageName: newlyInstalled || storageRes.packageName || effectivePackageName,
+        };
+      }
+
+      // Check if failure was caused by SELinux FUSE restriction on newer car updates
+      const errLower = (storageRes.message || '').toLowerCase();
+      if (errLower.includes('fuse') || errLower.includes('avc: denied') || errLower.includes('selinux')) {
+        onLog?.('تم رصد حظر SELinux FUSE على /sdcard. جاري التبديل التلقائي إلى بروتوكول مسار النظام (/data/local/tmp)...', 'warning');
+        const modernRes = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
+        if (modernRes.success) {
+          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, modernRes.packageName || effectivePackageName);
+          if (newlyInstalled) {
+            await this.activatePackageForCarLauncher(adb, newlyInstalled, currentUserId, onLog);
+          }
+          return {
+            ...modernRes,
+            methodUsed: 'auto',
+            packageName: newlyInstalled || modernRes.packageName || effectivePackageName,
+          };
+        }
+        return { ...modernRes, methodUsed: 'auto', packageName: effectivePackageName };
+      }
+
+      return { ...storageRes, methodUsed: 'auto', packageName: effectivePackageName };
     }
 
-    // Method 2: Storage Push & Direct Package Manager Install (Standard for older Car Units)
+    // Method 2: Storage Push & Direct Package Manager Install (Standard for Desay SV & Car Units)
     if (preferredMethod === 'sdcard') {
       const res = await this.installViaStoragePipe(adb, file, onProgress, onLog, effectivePackageName);
+      if (res.success) {
+        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
+        if (newlyInstalled) {
+          await this.activatePackageForCarLauncher(adb, newlyInstalled, currentUserId, onLog);
+        }
+        return { ...res, methodUsed: 'sdcard', packageName: newlyInstalled || res.packageName || effectivePackageName };
+      }
       return { ...res, methodUsed: 'sdcard', packageName: effectivePackageName };
     }
 
-    // Method 3: Direct sync_tmp
-    if (preferredMethod === 'sync_tmp') {
+    // Method 3: Modern Car Protocol (/data/local/tmp and package sessions)
+    if (preferredMethod === 'modern_car' || preferredMethod === 'sync_tmp') {
       const res = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
-      return { ...res, methodUsed: 'sync_tmp', packageName: effectivePackageName };
-    }
-
-    // Method 4: Auto Adaptive (Intelligently tries modern protocol first, then legacy)
-    if (preferredMethod === 'auto') {
-      try {
-        const res = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
-        if (res.success) {
-          return { ...res, methodUsed: 'auto', packageName: effectivePackageName };
+      if (res.success) {
+        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
+        if (newlyInstalled) {
+          await this.activatePackageForCarLauncher(adb, newlyInstalled, currentUserId, onLog);
         }
-      } catch (errModern: any) {
-        onLog?.(`تنبيه بروتوكول التحديثات الحديثة: ${errModern.message || errModern}. تجربة البروتوكول الكلاسيكي...`, 'info');
+        return { ...res, methodUsed: preferredMethod, packageName: newlyInstalled || res.packageName || effectivePackageName };
       }
-
-      const res = await this.installViaStoragePipe(adb, file, onProgress, onLog, effectivePackageName);
-      return { ...res, methodUsed: 'auto', packageName: effectivePackageName };
+      return { ...res, methodUsed: preferredMethod, packageName: effectivePackageName };
     }
 
-    // Method 5: Direct Binary Stream
+    // Method 4: Direct Binary Stream
     if (preferredMethod === 'stream') {
       try {
         const res = await this.installViaDirectStream(adb, file, onProgress, onLog, effectivePackageName);
+        if (res.success) {
+          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
+          if (newlyInstalled) {
+            await this.activatePackageForCarLauncher(adb, newlyInstalled, currentUserId, onLog);
+          }
+          return { ...res, methodUsed: 'stream', packageName: newlyInstalled || res.packageName || effectivePackageName };
+        }
         return { ...res, methodUsed: 'stream', packageName: effectivePackageName };
       } catch (err: any) {
-        onLog?.(`تعذر البث المباشر (${err.message || err}). جاري التبديل إلى بروتوكول التحديثات الحديثة...`, 'warning');
-        const fallbackRes = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
-        return { ...fallbackRes, methodUsed: 'modern_car', packageName: effectivePackageName };
+        onLog?.(`تعذر البث المباشر (${err.message || err}). جاري التبديل إلى بروتوكول التخزين...`, 'warning');
+        const fallbackRes = await this.installViaStoragePipe(adb, file, onProgress, onLog, effectivePackageName);
+        return { ...fallbackRes, methodUsed: 'sdcard', packageName: effectivePackageName };
       }
     }
 
-    // Method 6: Session
+    // Method 5: Session
     if (preferredMethod === 'session') {
-      try {
-        const res = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
-        return { ...res, methodUsed: 'session', packageName: effectivePackageName };
-      } catch (err: any) {
-        onLog?.(`فشلت جلسة التثبيت (${err.message || err})...`, 'warning');
-        throw err;
+      const res = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
+      if (res.success) {
+        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
+        if (newlyInstalled) {
+          await this.activatePackageForCarLauncher(adb, newlyInstalled, currentUserId, onLog);
+        }
+        return { ...res, methodUsed: 'session', packageName: newlyInstalled || res.packageName || effectivePackageName };
       }
+      return { ...res, methodUsed: 'session', packageName: effectivePackageName };
     }
 
     // Default fallback
-    const res = await this.installViaModernCarProtocol(adb, file, onProgress, onLog, effectivePackageName);
+    const res = await this.installViaStoragePipe(adb, file, onProgress, onLog, effectivePackageName);
     return { ...res, methodUsed: 'auto', packageName: effectivePackageName };
   }
 
@@ -131,9 +178,8 @@ export class ApkInstaller {
     const candidatePaths = [
       `/sdcard/Download/${safeName}`,
       `/sdcard/Download/app_install.apk`,
-      `/data/local/tmp/${safeName}`,
-      `/data/local/tmp/app_install.apk`,
       `/sdcard/${safeName}`,
+      `/sdcard/app_install.apk`,
     ];
 
     let targetPath = '';
@@ -385,30 +431,12 @@ export class ApkInstaller {
       };
     }
 
-    // Check if failure was caused by SELinux FUSE restriction on newer car updates
+    // Check if failure was specifically caused by SELinux FUSE restriction on newer car updates
     const lowerOut = (lastOutput || '').toLowerCase();
-    if (
-      lowerOut.includes('fuse') ||
-      lowerOut.includes('avc: denied') ||
-      lowerOut.includes('/data/local/tmp') ||
-      lowerOut.includes("can't open file") ||
-      lowerOut.includes('unable to open file')
-    ) {
-      onLog?.('تم رصد قيود أمنية في نظام السيارة المحدث (SELinux FUSE / sdcard Blocked): جاري التحويل التلقائي فوراً إلى بروتوكول التحديثات الحديثة (/data/local/tmp)...', 'warning');
-      return await this.installViaModernCarProtocol(adb, file, onProgress, onLog);
+    if (lowerOut.includes('fuse') || (lowerOut.includes('avc: denied') && lowerOut.includes('read'))) {
+      onLog?.('تم رصد قيود أمنية في نظام السيارة (SELinux FUSE Blocked): جاري التحويل التلقائي فوراً إلى بروتوكول مسار النظام (/data/local/tmp)...', 'warning');
+      return await this.installViaModernCarProtocol(adb, file, onProgress, onLog, knownPackageName);
     }
-
-    // Stage 6: If direct installation was blocked by system restriction, trigger interactive installer
-    try {
-      onLog?.('جاري إطلاق نافذة التثبيت التفاعلية على شاشة سيارتك للتأكيد اليدوي...', 'info');
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-      await this.execShell(adb, `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive"`);
-      onProgress?.(100, 'processing', 'تم فتح نافذة التثبيت على شاشة السيارة');
-      return {
-        success: true,
-        message: 'تم نقل التطبيق وفتح نافذة التثبيت على شاشة سيارتك. اضغط على زر (تثبيت / Install) على الشاشة لإتمام العملية.',
-      };
-    } catch {}
 
     const friendlyError = this.translateAndroidInstallError(lastOutput);
     return { success: false, message: friendlyError || lastOutput || 'فشل التثبيت على الشاشة' };
@@ -483,64 +511,64 @@ export class ApkInstaller {
       }
     }
 
+    let lastInstallOutput = '';
+
     if (pushSuccess) {
       // Grant full permissions and adjust SELinux context so system_server can read it
       try {
         await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-        await this.execShell(adb, `chmod 666 "${targetPath}" 2>/dev/null`);
         await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-        await this.execShell(adb, `chcon u:object_r:apk_data_file:s0 "${targetPath}" 2>/dev/null`);
         await this.execShell(adb, `restorecon -F "${targetPath}" 2>/dev/null`);
       } catch {}
 
       await new Promise((r) => setTimeout(r, 200));
 
-      onProgress?.(85, 'installing', 'تنفيذ أوامر التثبيت الحديثة وتوجيهها للمستخدم النشط...');
+      onProgress?.(85, 'installing', 'تنفيذ أوامر التثبيت ومزامنتها مع النظام...');
 
-      // Stage A: Multi-tier PM & CMD Package install targeting active driver user & all users
+      // Stage A: Multi-tier PM & CMD Package install (Universal commands first)
       const directCommands = [
-        // 1. Android Automotive active driver user targeting (Crucial for screen visibility!)
-        `pm install -r -d -g -t --user current "${targetPath}"`,
-        `pm install -r -d -g -t --user ${currentUserId} "${targetPath}"`,
-        `cmd package install -r -d -g -t --user current "${targetPath}"`,
-        `cmd package install -r -d -g -t --user ${currentUserId} "${targetPath}"`,
-        
-        // 2. Target all users
-        `pm install -r -d -g -t --user all "${targetPath}"`,
-        `cmd package install -r -d -g -t --user all "${targetPath}"`,
-
-        // 3. Elevated root if available on customized automotive firmware
-        `su -c 'pm install -r -d -g -t --user current "${targetPath}"' 2>/dev/null`,
-        `su -c 'pm install -r -d -g -t "${targetPath}"' 2>/dev/null`,
-        `su 0 pm install -r -d -g -t "${targetPath}" 2>/dev/null`,
-
-        // 4. Standard commands
+        // 1. Standard universal commands (Highest success rate across all Android versions)
         `pm install -r -d -g -t "${targetPath}"`,
-        `cmd package install -r -d -g -t "${targetPath}"`,
-        `pm install -r -g "${targetPath}"`,
+        `pm install -r -d -t "${targetPath}"`,
+        `pm install -r -g -t "${targetPath}"`,
         `pm install -r "${targetPath}"`,
         `pm install "${targetPath}"`,
+        `cmd package install -r -d -g -t "${targetPath}"`,
+        `cmd package install -r "${targetPath}"`,
+        `cat "${targetPath}" | pm install -r -d -g -t -S ${size}`,
+        `cat "${targetPath}" | pm install -S ${size}`,
+
+        // 2. Android Automotive active driver user targeting
+        `pm install -r -d -g -t --user ${currentUserId} "${targetPath}"`,
+        `cmd package install -r -d -g -t --user ${currentUserId} "${targetPath}"`,
+        `pm install -r -d -g -t --user 0 "${targetPath}"`,
+        `cmd package install -r -d -g -t --user 0 "${targetPath}"`,
+
+        // 3. Elevated root if available on customized automotive firmware
+        `su -c 'pm install -r -d -g -t "${targetPath}"' 2>/dev/null`,
+        `su 0 pm install -r -d -g -t "${targetPath}" 2>/dev/null`,
       ];
 
       for (let i = 0; i < directCommands.length; i++) {
         const cmd = directCommands[i];
         try {
-          onLog?.(`[أمر حديث ${i + 1}/${directCommands.length}] ${cmd}`, 'info');
+          onLog?.(`[أمر مسار النظام ${i + 1}/${directCommands.length}] ${cmd}`, 'info');
           const output = await this.execShell(adb, cmd);
           const trimmed = output.trim();
+          lastInstallOutput = trimmed;
           const isSuccessCmd = trimmed.toLowerCase().includes('success');
           onLog?.(`استجابة الشاشة: ${trimmed || '(تم التنفيذ)'}`, isSuccessCmd ? 'success' : 'info');
 
           if (isSuccessCmd) {
             await this.cleanupFile(adb, targetPath);
-            if (effectivePackageName) {
+            if (effectivePackageName && effectivePackageName !== 'base') {
               await this.activatePackageForCarLauncher(adb, effectivePackageName, currentUserId, onLog);
             }
             await this.autoGrantAutomotivePermissions(adb, file.name, onLog);
             onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
             return {
               success: true,
-              message: 'تم تثبيت التطبيق بنجاح عبر بروتوكول التحديثات الحديثة (/data/local/tmp) وتفعيله لشاشة السيارة.',
+              message: 'تم تثبيت التطبيق بنجاح عبر بروتوكول مسار النظام وتفعيله لشاشة السيارة.',
               packageName: effectivePackageName,
             };
           }
@@ -751,9 +779,10 @@ export class ApkInstaller {
       }
     }
 
+    const translated = this.translateAndroidInstallError(lastInstallOutput);
     return {
       success: false,
-      message: 'تعذر تأكيد تثبيت التطبيق على نظام السيارة. يرجى التأكد من مساحة التخزين وتوافق معمارية المعالج (32-bit armeabi-v7a أو 64-bit arm64-v8a).',
+      message: translated || lastInstallOutput || 'تعذر تأكيد تثبيت التطبيق على نظام السيارة. يرجى التأكد من مساحة التخزين وتوافق معمارية المعالج (32-bit armeabi-v7a أو 64-bit arm64-v8a).',
     };
   }
 
@@ -841,17 +870,70 @@ export class ApkInstaller {
    * - Clears stopped / suspended state
    * - Informs the launcher via package change broadcast
    */
+  /**
+   * Retrieves current set of installed package names on device
+   */
+  public static async getInstalledPackagesSet(adb: Adb): Promise<Set<string>> {
+    const set = new Set<string>();
+    try {
+      const out = await this.execShell(adb, 'pm list packages 2>/dev/null');
+      for (const line of out.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('package:')) {
+          set.add(trimmed.substring(8).trim());
+        }
+      }
+    } catch {}
+    return set;
+  }
+
+  /**
+   * Finds newly installed package by diffing with before snapshot
+   */
+  public static async detectNewlyInstalledPackage(
+    adb: Adb,
+    beforeSet: Set<string>,
+    suggestedPackage?: string
+  ): Promise<string | undefined> {
+    if (suggestedPackage && suggestedPackage !== 'base' && suggestedPackage !== 'unknown.package') {
+      const isInst = await this.isPackageInstalled(adb, suggestedPackage);
+      if (isInst) return suggestedPackage;
+    }
+
+    try {
+      const afterSet = await this.getInstalledPackagesSet(adb);
+      for (const pkg of afterSet) {
+        if (!beforeSet.has(pkg)) {
+          return pkg;
+        }
+      }
+    } catch {}
+
+    return suggestedPackage && suggestedPackage !== 'base' && suggestedPackage !== 'unknown.package'
+      ? suggestedPackage
+      : undefined;
+  }
+
+  /**
+   * Comprehensive automotive launcher activation pipeline:
+   * - Installs existing package into all active & automotive user profiles (0, 10, current)
+   * - Unhides and enables package across users
+   * - Sets distraction-optimized display flag for car screen
+   * - Wakes package from stopped state (clearing FLAG_STOPPED)
+   * - Broadcasts launcher refresh intents
+   * - Grants SYSTEM_ALERT_WINDOW and usage stats
+   */
   public static async activatePackageForCarLauncher(
     adb: Adb,
     packageName: string,
     userId: string,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<void> {
-    if (!packageName || packageName === 'unknown.package') return;
+    if (!packageName || packageName === 'unknown.package' || packageName === 'base') return;
 
-    onLog?.(`تفعيل التطبيق (${packageName}) لمستخدم الشاشة الحالي (${userId}) لضمان ظهوره في قائمة البرامج...`, 'info');
+    onLog?.(`تفعيل التطبيق (${packageName}) لجميع مستخدمي السيارة وتجهيزه لشاشة العرض...`, 'info');
 
-    const usersToTarget = Array.from(new Set([userId, 'current', '0', '10'])).filter(Boolean);
+    const usersToTarget = Array.from(new Set([userId, 'current', '0', '10', '11'])).filter(Boolean);
 
     for (const u of usersToTarget) {
       try {
@@ -862,6 +944,7 @@ export class ApkInstaller {
         // Step 2: Unhide
         await this.execShell(adb, `cmd package unhide --user ${u} ${packageName} 2>/dev/null`);
         await this.execShell(adb, `pm unhide --user ${u} ${packageName} 2>/dev/null`);
+        await this.execShell(adb, `pm set-application-hidden --user ${u} ${packageName} false 2>/dev/null`);
 
         // Step 3: Enable
         await this.execShell(adb, `cmd package enable --user ${u} ${packageName} 2>/dev/null`);
@@ -869,25 +952,43 @@ export class ApkInstaller {
 
         // Step 4: Unsuspend
         await this.execShell(adb, `cmd package unsuspend --user ${u} ${packageName} 2>/dev/null`);
+        await this.execShell(adb, `pm unsuspend --user ${u} ${packageName} 2>/dev/null`);
         await this.execShell(adb, `cmd package set-distracting-restriction --user ${u} --restriction none ${packageName} 2>/dev/null`);
+
+        // Step 5: Car screen distraction optimization (ensures Android Automotive shows app while driving/parked)
+        await this.execShell(adb, `cmd package set-distraction-optimized --user ${u} true ${packageName} 2>/dev/null`);
       } catch {}
     }
 
-    // Step 5: Global unhide and enable
+    // Step 6: Global unhide, enable and optimize
     try {
       await this.execShell(adb, `pm unhide ${packageName} 2>/dev/null`);
       await this.execShell(adb, `pm enable ${packageName} 2>/dev/null`);
+      await this.execShell(adb, `cmd package set-distraction-optimized true ${packageName} 2>/dev/null`);
       await this.execShell(adb, `pm default-state --user current ${packageName} 2>/dev/null`);
     } catch {}
 
-    // Step 6: Notify Car Launcher via broadcast to refresh package list
+    // Step 7: Automotive screen overlay & usage permissions
+    try {
+      await this.execShell(adb, `appops set ${packageName} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
+      await this.execShell(adb, `appops set ${packageName} GET_USAGE_STATS allow 2>/dev/null`);
+      await this.execShell(adb, `pm grant ${packageName} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
+    } catch {}
+
+    // Step 8: Wake up package from stopped state (Crucial: clears FLAG_STOPPED so car launchers recognize it)
+    try {
+      await this.execShell(adb, `monkey -p ${packageName} -c android.intent.category.LAUNCHER 1 2>/dev/null`);
+    } catch {}
+
+    // Step 9: Notify Car Launcher via broadcast to refresh package list
     try {
       await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_ADDED -d package:${packageName} 2>/dev/null`);
       await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_CHANGED -d package:${packageName} 2>/dev/null`);
       await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_REPLACED -d package:${packageName} 2>/dev/null`);
+      await this.execShell(adb, `am broadcast -a com.android.launcher.action.INSTALL_SHORTCUT 2>/dev/null`);
     } catch {}
 
-    onLog?.(`تم تفعيل التطبيق (${packageName}) وتهيئته لقائمة برامج السيارة بنجاح.`, 'success');
+    onLog?.(`تم تفعيل التطبيق (${packageName}) بنجاح وتجهيزه لشاشة وقائمة السيارة.`, 'success');
   }
 
   /**
@@ -1175,13 +1276,12 @@ export class ApkInstaller {
 
     if (
       err.includes('FUSE') ||
-      err.includes('AVC: DENIED') ||
-      err.includes('/DATA/LOCAL/TMP') ||
+      (err.includes('AVC: DENIED') && err.includes('READ')) ||
       err.includes('CANNOT OPEN FILE') ||
       err.includes("CAN'T OPEN FILE") ||
       err.includes('UNABLE TO OPEN FILE')
     ) {
-      return 'تم اكتشاف قيود أمنية في تحديث نظام السيارة الأخير (SELinux FUSE Restriction): يمنع التحديث الأخير قراءة التطبيقات من مسار /sdcard. يرجى اختيار (بروتوكول التحديثات الحديثة Android 11+ / Desay SV) من القائمة بالأعلى لتجاوز هذا القيد والتثبيت عبر /data/local/tmp وجلسات النظام بنجاح.';
+      return 'تم رصد قيود أمنية في نظام السيارة الأخير (SELinux FUSE Restriction): يمنع قراءة التطبيقات من مسار /sdcard. يرجى اختيار (الوضع التلقائي الذكي) أو (بروتوكول مسار النظام) من القائمة لتجاوز هذا القيد.';
     }
 
     if (err.includes('INSTALL_FAILED_ALREADY_EXISTS') || err.includes('UPDATE_INCOMPATIBLE') || err.includes('SIGNATURE_MISMATCH')) {

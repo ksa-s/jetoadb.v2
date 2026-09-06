@@ -17,7 +17,7 @@ export interface ApkMetadata {
 export async function parseApkMetadata(file: File): Promise<ApkMetadata> {
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const manifestBytes = extractFileFromZip(new Uint8Array(arrayBuffer), 'AndroidManifest.xml');
+    const manifestBytes = await extractFileFromZip(new Uint8Array(arrayBuffer), 'AndroidManifest.xml');
     
     if (!manifestBytes) {
       // Fallback: extract package name from file name if possible
@@ -49,7 +49,7 @@ export async function parseApkMetadata(file: File): Promise<ApkMetadata> {
 /**
  * Extracts a specific uncompressed or Deflate-compressed file from a ZIP byte array
  */
-function extractFileFromZip(bytes: Uint8Array, targetFileName: string): Uint8Array | null {
+async function extractFileFromZip(bytes: Uint8Array, targetFileName: string): Promise<Uint8Array | null> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let offset = 0;
 
@@ -78,10 +78,9 @@ function extractFileFromZip(bytes: Uint8Array, targetFileName: string): Uint8Arr
         // Stored (no compression)
         return fileData;
       } else if (compressionMethod === 8) {
-        // Deflated - use browser DecompressionStream if available
+        // Deflated - use browser DecompressionStream
         try {
-          // Sync inflation or raw fallback
-          return decompressRawDeflate(fileData, uncompressedSize);
+          return await decompressRawDeflate(fileData, uncompressedSize);
         } catch {
           return null;
         }
@@ -95,12 +94,33 @@ function extractFileFromZip(bytes: Uint8Array, targetFileName: string): Uint8Arr
 }
 
 /**
- * Decompresses raw Deflate stream using browser's DecompressionStream or basic fallback
+ * Decompresses raw Deflate stream using browser's DecompressionStream
  */
-function decompressRawDeflate(compressed: Uint8Array, expectedSize: number): Uint8Array | null {
-  // If in modern browser with sync inflate or we can decode binary manifest strings directly:
-  // In many APKs, AndroidManifest is Deflated with standard raw deflate.
-  // We can also extract strings from raw byte inspection if decompression isn't available synchronously.
+async function decompressRawDeflate(compressed: Uint8Array, _expectedSize: number): Promise<Uint8Array | null> {
+  if (typeof DecompressionStream === 'undefined') return null;
+
+  // Try raw deflate first (ZIP RFC 1951)
+  try {
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    writer.write(compressed as any);
+    writer.close();
+    const res = new Response(ds.readable);
+    const buf = await res.arrayBuffer();
+    return new Uint8Array(buf);
+  } catch {}
+
+  // Fallback to standard deflate stream
+  try {
+    const ds = new DecompressionStream('deflate');
+    const writer = ds.writable.getWriter();
+    writer.write(compressed as any);
+    writer.close();
+    const res = new Response(ds.readable);
+    const buf = await res.arrayBuffer();
+    return new Uint8Array(buf);
+  } catch {}
+
   return null;
 }
 

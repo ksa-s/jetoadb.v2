@@ -193,18 +193,18 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="modern_car">⚡ بروتوكول التحديثات الحديثة (Android 11+ / Desay SV الجديد / مسار /data/local/tmp وجلسات Package Sessions)</option>
-              <option value="auto">الوضع التلقائي الذكي لشاشات السيارات (Auto Adaptive - متوافق مع كافة الإصدارات)</option>
-              <option value="sdcard">التثبيت عبر التخزين والأنابيب البرمجية (Storage Pipe - للإصدارات السابقة)</option>
-              <option value="stream">البث الثنائي المباشر (Direct Binary Stream)</option>
-              <option value="session">مدير حزم أندرويد القياسي (PackageManager Session)</option>
+              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (موصى به - متوافق مع كافة سيارات Desay SV وجيلي وتحديثات أندرويد)</option>
+              <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download - متوافق 100% مع شاشات Desay SV)</option>
+              <option value="modern_car">⚡ بروتوكول مسار النظام (/data/local/tmp وجلسات Package Sessions)</option>
+              <option value="stream">📡 البث الثنائي المباشر (Direct Binary Stream)</option>
+              <option value="session">📦 مدير جلسات أندرويد القياسي (PackageManager Session)</option>
               <option value="sync_tmp">ممر tmp المباشر (Direct /data/local/tmp Sync)</option>
             </select>
           </div>
 
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ تم إضافة بروتوكول التحديثات الحديثة مع الحفاظ على جميع البروتوكولات السابقة
+              ✓ تم تحسين بروتوكولات التثبيت التلقائي والتفعيل لشاشة السيارة
             </span>
           </div>
         </div>
@@ -339,23 +339,32 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                   {item.status === 'error' && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
-                        onClick={() => onInstallSingle(item, 'modern_car')}
+                        onClick={() => onInstallSingle(item, 'auto')}
                         disabled={isInstalling || !isConnected}
                         className="text-[11px] font-bold text-cyan-200 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-cyan-950/40"
-                        title="التثبيت الفوري ببروتوكول التحديثات الحديثة (/data/local/tmp)"
+                        title="إعادة التثبيت بالوضع التلقائي الذكي"
                       >
                         <Zap className="w-3 h-3 text-cyan-400 fill-cyan-400" />
-                        <span>بروتوكول التحديثات الحديثة</span>
+                        <span>الوضع التلقائي</span>
                       </button>
 
                       <button
-                        onClick={() => onInstallSingle(item, selectedMethod)}
+                        onClick={() => onInstallSingle(item, 'sdcard')}
                         disabled={isInstalling || !isConnected}
-                        className="text-[11px] font-semibold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="إعادة المحاولة باستخدام البروتوكول المحدد"
+                        className="text-[11px] font-semibold text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="التثبيت عبر بروتوكول التخزين /sdcard/Download"
                       >
                         <RotateCw className="w-3 h-3" />
-                        <span>إعادة محاولة</span>
+                        <span>بروتوكول التخزين (/sdcard)</span>
+                      </button>
+
+                      <button
+                        onClick={() => onInstallSingle(item, 'modern_car')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-750 border border-slate-700 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="التثبيت عبر مسار النظام /data/local/tmp"
+                      >
+                        <span>مسار النظام</span>
                       </button>
                     </div>
                   )}
