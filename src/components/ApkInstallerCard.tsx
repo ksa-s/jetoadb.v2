@@ -13,7 +13,9 @@ import {
   Settings2, 
   RotateCw,
   AlertCircle,
-  HelpCircle
+  HelpCircle,
+  Zap,
+  ShieldAlert
 } from 'lucide-react';
 import { parseApkMetadata } from '../lib/apk-parser';
 
@@ -175,26 +177,50 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
       </div>
 
       {/* Install Method & Fix Protocol Bar */}
-      <div className="mt-3.5 bg-slate-950/60 rounded-xl p-3 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-          <span className="text-slate-300 font-medium">بروتوكول التثبيت:</span>
-          <select
-            value={selectedMethod}
-            onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
-            className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
-          >
-            <option value="auto">الوضع التلقائي الذكي لشاشات السيارات (Jetour / Haval / Geely / Changan / Desay SV)</option>
-            <option value="sdcard">التثبيت عبر التخزين والأنابيب البرمجية (Storage Pipe)</option>
-            <option value="stream">البث الثنائي المباشر (Direct Binary Stream)</option>
-            <option value="session">مدير حزم أندرويد القياسي (PackageManager)</option>
-          </select>
+      <div className="mt-3.5 bg-slate-950/60 rounded-xl p-3 border border-slate-800 flex flex-col gap-2.5 text-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span className="text-slate-300 font-medium">بروتوكول التثبيت:</span>
+            <select
+              value={selectedMethod}
+              onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
+            >
+              <option value="modern_car">⚡ بروتوكول التحديثات الحديثة (Android 11+ / Desay SV الجديد / مسار /data/local/tmp وجلسات Package Sessions)</option>
+              <option value="auto">الوضع التلقائي الذكي لشاشات السيارات (Auto Adaptive - متوافق مع كافة الإصدارات)</option>
+              <option value="sdcard">التثبيت عبر التخزين والأنابيب البرمجية (Storage Pipe - للإصدارات السابقة)</option>
+              <option value="stream">البث الثنائي المباشر (Direct Binary Stream)</option>
+              <option value="session">مدير حزم أندرويد القياسي (PackageManager Session)</option>
+              <option value="sync_tmp">ممر tmp المباشر (Direct /data/local/tmp Sync)</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
+              ✓ تم إضافة بروتوكول التحديثات الحديثة مع الحفاظ على جميع البروتوكولات السابقة
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-          <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-            ✓ يتجاوز قيود SELinux و /data/local/tmp المقفل
+        {/* Informative Helper for Modern Car Protocol */}
+        <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
+          <span className="text-slate-300">
+            {selectedMethod === 'modern_car' && '⚡ بروتوكول التحديثات الحديثة: مخصص للإصدارات وتحديثات السيارات الجديدة، ينقل الحزم إلى مسار النظام المعتمد /data/local/tmp ويستخدم جلسات الحزم لتجاوز حظر FUSE و SELinux كلياً.'}
+            {selectedMethod === 'auto' && 'الوضع الذكي: يكتشف نوع النظام تلقائياً، ويبدأ بالبروتوكول الحديث مع الرجوع للبروتوكولات السابقة عند الحاجة.'}
+            {selectedMethod === 'sdcard' && 'البروتوكول الكلاسيكي: ينقل الحزمة إلى /sdcard/Download/ (مناسب للإصدارات والشاشات الأقدم).'}
+            {selectedMethod === 'stream' && 'بث البيانات الثنائي المباشر إلى مدخل الحزم بدون تخزين وسيط.'}
+            {selectedMethod === 'session' && 'جلسات تثبيت مدير حزم أندرويد الرسمية (PackageManager Staging Session).'}
+            {selectedMethod === 'sync_tmp' && 'مزامنة ADB المباشرة إلى مسار /data/local/tmp والتثبيت بصلاحيات shell.'}
           </span>
+          {selectedMethod !== 'modern_car' && (
+            <button
+              onClick={() => onSelectMethod('modern_car')}
+              className="text-cyan-400 hover:text-cyan-300 underline font-medium cursor-pointer"
+            >
+              التبديل إلى بروتوكول التحديثات الحديثة ⚡
+            </button>
+          )}
         </div>
       </div>
 
@@ -279,15 +305,27 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                   )}
 
                   {item.status === 'error' && (
-                    <button
-                      onClick={() => onInstallSingle(item, 'sdcard')}
-                      disabled={isInstalling || !isConnected}
-                      className="text-[11px] font-semibold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                      title="إعادة التثبيت باستخدام بروتوكول ADB Sync المباشر"
-                    >
-                      <RotateCw className="w-3 h-3" />
-                      <span>إعادة المحاولة (ADB Sync)</span>
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => onInstallSingle(item, 'modern_car')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-bold text-cyan-200 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-cyan-950/40"
+                        title="التثبيت الفوري ببروتوكول التحديثات الحديثة (/data/local/tmp)"
+                      >
+                        <Zap className="w-3 h-3 text-cyan-400 fill-cyan-400" />
+                        <span>بروتوكول التحديثات الحديثة</span>
+                      </button>
+
+                      <button
+                        onClick={() => onInstallSingle(item, selectedMethod)}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-semibold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="إعادة المحاولة باستخدام البروتوكول المحدد"
+                      >
+                        <RotateCw className="w-3 h-3" />
+                        <span>إعادة محاولة</span>
+                      </button>
+                    </div>
                   )}
 
                   {item.status === 'idle' && (
@@ -330,12 +368,34 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
 
               {/* Error message box if failed */}
               {item.status === 'error' && item.errorMessage && (
-                <div className="mt-2 text-xs bg-rose-950/50 border border-rose-500/40 rounded-lg p-2.5 text-rose-200 flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold text-rose-300">سبب الخطأ: </span>
-                    <span>{item.errorMessage}</span>
+                <div className="mt-2 text-xs bg-rose-950/50 border border-rose-500/40 rounded-lg p-2.5 text-rose-200 flex flex-col gap-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-rose-300">سبب الخطأ: </span>
+                      <span>{item.errorMessage}</span>
+                    </div>
                   </div>
+
+                  {(item.errorMessage.toLowerCase().includes('fuse') ||
+                    item.errorMessage.toLowerCase().includes('avc: denied') ||
+                    item.errorMessage.toLowerCase().includes('/data/local/tmp') ||
+                    item.errorMessage.toLowerCase().includes("can't open file") ||
+                    item.errorMessage.toLowerCase().includes('unable to open file')) && (
+                    <div className="mr-6 bg-rose-900/40 border border-rose-500/30 rounded-lg p-2 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                      <span className="text-cyan-300 font-medium">
+                        💡 هذا القيد ناتج عن تحديث نظام السيارة (حظر القراءة من /sdcard). البروتوكول الحديث يحل المشكلة كلياً.
+                      </span>
+                      <button
+                        onClick={() => onInstallSingle(item, 'modern_car')}
+                        disabled={isInstalling || !isConnected}
+                        className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Zap className="w-3 h-3 fill-current" />
+                        <span>تثبيت فوري بالبروتوكول الحديث</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
