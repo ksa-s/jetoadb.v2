@@ -15,7 +15,9 @@ import {
   AlertCircle,
   HelpCircle,
   Zap,
-  ShieldAlert
+  ShieldAlert,
+  Eye,
+  Tv
 } from 'lucide-react';
 import { parseApkMetadata } from '../lib/apk-parser';
 
@@ -30,6 +32,8 @@ interface ApkInstallerCardProps {
   isConnected: boolean;
   selectedMethod: InstallMethod;
   onSelectMethod: (method: InstallMethod) => void;
+  onLaunchApp?: (packageName: string) => void;
+  onExposeApp?: (packageName: string) => void;
 }
 
 export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
@@ -43,6 +47,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
   isConnected,
   selectedMethod,
   onSelectMethod,
+  onLaunchApp,
+  onExposeApp,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -298,10 +304,36 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                 {/* Right: Actions and Status badge */}
                 <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                   {item.status === 'success' && (
-                    <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>تم التثبيت بنجاح</span>
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>مثبت في النظام</span>
+                      </span>
+
+                      {item.packageName && onLaunchApp && (
+                        <button
+                          onClick={() => onLaunchApp(item.packageName!)}
+                          disabled={!isConnected}
+                          className="text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-500 border border-emerald-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-emerald-950/40"
+                          title="تشغيل وفتح التطبيق فوراً على شاشة السيارة"
+                        >
+                          <Play className="w-3 h-3 fill-white" />
+                          <span>تشغيل على الشاشة</span>
+                        </button>
+                      )}
+
+                      {item.packageName && onExposeApp && (
+                        <button
+                          onClick={() => onExposeApp(item.packageName!)}
+                          disabled={!isConnected}
+                          className="text-[11px] font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          title="إعادة تفعيل التطبيق وإظهاره لجميع مستخدمي واجهة السيارة وتحديث القائمة"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>تفعيل في القائمة</span>
+                        </button>
+                      )}
+                    </div>
                   )}
 
                   {item.status === 'error' && (
@@ -396,6 +428,20 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Success launcher visibility helper notice */}
+              {item.status === 'success' && (
+                <div className="mt-2.5 text-xs bg-emerald-950/40 border border-emerald-500/30 rounded-lg p-2.5 text-slate-300 flex items-start gap-2.5">
+                  <Tv className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <span className="font-bold text-emerald-300">هل التطبيق لا يظهر في شاشة السيارة أو قائمة البرامج؟ </span>
+                    <span>
+                      تحديثات أنظمة السيارات الأخيرة (Android 11+ و Desay SV و Geely و Haval) قد تحجب واجهتها الأصلية التطبيقات الخارجية من شاشة العرض، رغم اكتمال تثبيتها في النظام.
+                      يمكنك الضغط على زر <strong className="text-white">"تشغيل على الشاشة"</strong> لفتحه مباشرة، أو تثبيت تطبيق <strong className="text-cyan-300">Car Launcher Pro</strong> أو مشغل تطبيقات بديل للوصول لكافة البرامج المثبتة بحرية.
+                    </span>
+                  </div>
                 </div>
               )}
             </div>

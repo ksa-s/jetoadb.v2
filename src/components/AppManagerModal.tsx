@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   PackageCheck,
   ShieldCheck,
-  Zap
+  Zap,
+  Eye,
+  Tv
 } from 'lucide-react';
 import { Adb } from '@yume-chan/adb';
 import { CarSystemTools } from '../lib/adb/car-system-tools';
@@ -93,6 +95,21 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
     } catch (e: any) {
       onLog(`فشل فتح التطبيق: ${e.message || e}`, 'error');
       setFeedback({ type: 'error', message: e.message || 'فشل فتح التطبيق' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleExpose = async (pkg: string) => {
+    if (!adb) return;
+    setActionLoading(`expose-${pkg}`);
+    try {
+      const msg = await CarSystemTools.exposeAppToCarLauncher(adb, pkg);
+      onLog(msg, 'success');
+      setFeedback({ type: 'success', message: `تم تفعيل وتثبيت التطبيق (${pkg}) لواجهة السيارة وتحديث القائمة` });
+    } catch (e: any) {
+      onLog(`فشل تفعيل التطبيق: ${e.message || e}`, 'error');
+      setFeedback({ type: 'error', message: e.message || 'فشل تفعيل التطبيق' });
     } finally {
       setActionLoading(null);
     }
@@ -214,6 +231,17 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
           </div>
         )}
 
+        {/* OEM Launcher Notice */}
+        <div className="mx-4 mt-3 p-3 bg-cyan-950/40 border border-cyan-500/30 rounded-xl text-xs text-slate-300 flex items-start gap-2.5">
+          <Tv className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-bold text-cyan-300">ملاحظة حول ظهور التطبيقات في شاشة السيارة: </span>
+            <span>
+              إذا قمت بتثبيت التطبيق بنجاح ولكنه لا يظهر في شاشة سيارتك أو قائمة البرامج، فإن واجهة السيارة الأصلية (OEM Launcher) قد تحجب التطبيقات العادية بعد التحديث. يمكنك الضغط على <strong>"تشغيل"</strong> لفتحه فوراً على الشاشة، أو استخدام <strong>"إظهار بالقائمة"</strong> لتنشيطه عبر كافة مستخدمي النظام، أو تثبيت مشغل تطبيقات مثل <strong>Car Launcher Pro</strong> لعرض كافة التطبيقات بحرية.
+            </span>
+          </div>
+        </div>
+
         {/* Apps List */}
         <div className="p-4 overflow-y-auto flex-1 space-y-2">
           {isLoading ? (
@@ -268,6 +296,20 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
                       <Play className="w-3 h-3 fill-current" />
                     )}
                     <span>تشغيل</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleExpose(app.packageName)}
+                    disabled={actionLoading !== null}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-950/50 hover:bg-indigo-900/70 border border-indigo-600/40 text-indigo-300 text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                    title="تفعيل وإظهار التطبيق لجميع مستخدمي واجهة السيارة وتحديث القائمة"
+                  >
+                    {actionLoading === `expose-${app.packageName}` ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Eye className="w-3 h-3 text-indigo-400" />
+                    )}
+                    <span>إظهار بالقائمة</span>
                   </button>
 
                   <button

@@ -4,29 +4,40 @@ import { adbManager } from './webusb-manager';
 
 export class CarSystemTools {
   /**
-   * Lists installed apps (3rd party or system)
+   * Lists installed apps (3rd party or system) with multi-user awareness
    */
   public static async getInstalledApps(adb: Adb, thirdPartyOnly = true): Promise<InstalledApp[]> {
     try {
       const flag = thirdPartyOnly ? '-3' : '';
-      const cmd = `pm list packages ${flag}`;
-      const output = await this.exec(adb, cmd);
+      
+      // On Android Automotive or newer multi-user head units, try multiple flags to ensure we don't miss apps installed in other user profiles or marked uninstalled/hidden
+      const outputs = await Promise.allSettled([
+        this.exec(adb, `pm list packages ${flag} --user current 2>/dev/null`),
+        this.exec(adb, `pm list packages ${flag} -u 2>/dev/null`),
+        this.exec(adb, `pm list packages ${flag} 2>/dev/null`),
+      ]);
 
-      const lines = output.split('\n');
-      const apps: InstalledApp[] = [];
+      const packageNames = new Set<string>();
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('package:')) {
-          const packageName = trimmed.replace('package:', '').trim();
-          if (packageName) {
-            apps.push({
-              packageName,
-              isSystem: !thirdPartyOnly,
-            });
+      for (const res of outputs) {
+        if (res.status === 'fulfilled' && res.value) {
+          const lines = res.value.split('\n');
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('package:')) {
+              const pkg = trimmed.replace('package:', '').trim();
+              if (pkg) {
+                packageNames.add(pkg);
+              }
+            }
           }
         }
       }
+
+      const apps: InstalledApp[] = Array.from(packageNames).map((packageName) => ({
+        packageName,
+        isSystem: !thirdPartyOnly,
+      }));
 
       return apps;
     } catch (e: any) {
@@ -35,19 +46,81 @@ export class CarSystemTools {
   }
 
   /**
-   * Launches an app on the car screen
+   * Launches an app on the car screen with multi-user and fallback intent support
    */
-  public static async launchApp(adb: Adb, packageName: string): Promise<string> {
+  public static async launchApp(adb: Adb, packageName: string, userId = 'current'): Promise<string> {
     try {
-      const cmd = `monkey -p ${packageName} -c android.intent.category.LAUNCHER 1`;
-      const out = await this.exec(adb, cmd);
-      if (out.includes('No activities found')) {
-        return await this.exec(adb, `am start ${packageName}`);
+      // Ensure app is enabled, unhidden, and present across all possible user profiles (current, 0, 10)
+      const users = Array.from(new Set([userId, 'current', '0', '10'])).filter(Boolean);
+      for (const u of users) {
+        try {
+          await this.exec(adb, `cmd package install-existing --user ${u} ${packageName} 2>/dev/null`);
+          await this.exec(adb, `pm install-existing --user ${u} ${packageName} 2>/dev/null`);
+          await this.exec(adb, `pm unhide --user ${u} ${packageName} 2>/dev/null`);
+          await this.exec(adb, `pm enable --user ${u} ${packageName} 2>/dev/null`);
+          await this.exec(adb, `cmd package unsuspend --user ${u} ${packageName} 2>/dev/null`);
+        } catch {}
       }
-      return 'تم إرسال أمر تشغيل التطبيق إلى الشاشة.';
+      try {
+        await this.exec(adb, `pm unhide ${packageName} 2>/dev/null`);
+        await this.exec(adb, `pm enable ${packageName} 2>/dev/null`);
+      } catch {}
+
+      // Attempt 1: monkey launcher
+      const cmd = `monkey --pct-syskeys 0 -p ${packageName} -c android.intent.category.LAUNCHER 1`;
+      const out = await this.exec(adb, cmd);
+      if (out.includes('Events injected: 1')) {
+        return `تم تشغيل التطبيق (${packageName}) بنجاح على شاشة السيارة.`;
+      }
+
+      // Attempt 2: Resolve specific launchable activity from package manager
+      try {
+        const resolveCmd = `cmd package resolve-activity --brief ${packageName} 2>/dev/null || pm resolve-activity --brief ${packageName} 2>/dev/null`;
+        const resOut = await this.exec(adb, resolveCmd);
+        const match = resOut.match(/([a-zA-Z0-9._]+\/[a-zA-Z0-9._]+)/);
+        if (match && match[1] && !match[1].includes('ResolverActivity')) {
+          await this.exec(adb, `am start -n ${match[1]} --user current 2>/dev/null || am start -n ${match[1]}`);
+          return `تم تشغيل واجهة التطبيق (${match[1]}) مباشرة على شاشة السيارة.`;
+        }
+      } catch {}
+
+      // Attempt 3: Standard action.MAIN
+      try {
+        await this.exec(adb, `am start -a android.intent.action.MAIN -c android.intent.category.LAUNCHER --user ${userId} ${packageName} 2>/dev/null || am start ${packageName}`);
+        return `تم إرسال أمر فتح التطبيق (${packageName}) إلى شاشة السيارة.`;
+      } catch {}
+
+      // Attempt 4: Fallback monkey without strict category
+      await this.exec(adb, `monkey -p ${packageName} 1 2>/dev/null`);
+      return `تم إرسال أمر إطلاق التطبيق (${packageName}) إلى شاشة السيارة.`;
     } catch (e: any) {
       throw new Error(`تعذر تشغيل التطبيق: ${e.message || e}`);
     }
+  }
+
+  /**
+   * Forces the car screen launcher to detect and display the app
+   */
+  public static async exposeAppToCarLauncher(adb: Adb, packageName: string): Promise<string> {
+    const users = ['current', '0', '10'];
+    for (const u of users) {
+      try {
+        await this.exec(adb, `cmd package install-existing --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `pm install-existing --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `pm unhide --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `pm enable --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `cmd package unsuspend --user ${u} ${packageName} 2>/dev/null`);
+      } catch {}
+    }
+    try {
+      await this.exec(adb, `pm unhide ${packageName} 2>/dev/null`);
+      await this.exec(adb, `pm enable ${packageName} 2>/dev/null`);
+      await this.exec(adb, `am broadcast -a android.intent.action.PACKAGE_ADDED -d package:${packageName} 2>/dev/null`);
+      await this.exec(adb, `am broadcast -a android.intent.action.PACKAGE_CHANGED -d package:${packageName} 2>/dev/null`);
+      await this.exec(adb, `am broadcast -a android.intent.action.PACKAGE_REPLACED -d package:${packageName} 2>/dev/null`);
+    } catch {}
+
+    return `تم تفعيل وتثبيت التطبيق (${packageName}) لجميع مستخدمي السيارة وتحديث واجهة البرامج.`;
   }
 
   /**

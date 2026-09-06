@@ -171,16 +171,31 @@ export default function App() {
             addLog(`${item.name}: ${msg}`, 'info');
           }
         },
-        (logMsg, logType) => addLog(logMsg, logType)
+        (logMsg, logType) => addLog(logMsg, logType),
+        item.packageName
       );
 
       if (result.success) {
         setApkList((prev) =>
           prev.map((a) =>
-            a.id === item.id ? { ...a, status: 'success', progress: 100, usedMethod: result.methodUsed } : a
+            a.id === item.id
+              ? {
+                  ...a,
+                  status: 'success',
+                  progress: 100,
+                  usedMethod: result.methodUsed,
+                  packageName: result.packageName || a.packageName,
+                }
+              : a
           )
         );
         addLog(`تم تثبيت ${item.name} بنجاح على الشاشة (${result.methodUsed})!`, 'success');
+
+        // Refresh installed apps list
+        try {
+          const apps = await CarSystemTools.getInstalledApps(adb, false);
+          setInstalledApps(apps);
+        } catch {}
       } else {
         setApkList((prev) =>
           prev.map((a) =>
@@ -230,6 +245,39 @@ export default function App() {
 
     setIsInstalling(false);
     addLog('اكتملت معالجة حزمة التطبيقات.', 'info');
+  };
+
+  // Launch app directly on car screen
+  const handleLaunchApp = async (packageName: string) => {
+    if (!adb) {
+      addLog('تنبيه: يجب الاتصال بالجهاز أولاً لتشغيل التطبيق.', 'warning');
+      return;
+    }
+    addLog(`جاري إرسال أمر فتح وتشغيل التطبيق (${packageName}) على شاشة السيارة...`, 'info');
+    try {
+      const msg = await CarSystemTools.launchApp(adb, packageName);
+      addLog(msg, 'success');
+    } catch (err: any) {
+      addLog(`فشل فتح التطبيق: ${err.message || err}`, 'error');
+    }
+  };
+
+  // Expose app to car launcher
+  const handleExposeApp = async (packageName: string) => {
+    if (!adb) {
+      addLog('تنبيه: يجب الاتصال بالجهاز أولاً.', 'warning');
+      return;
+    }
+    addLog(`جاري تفعيل وإظهار التطبيق (${packageName}) لواجهة مستخدم السيارة...`, 'info');
+    try {
+      const msg = await CarSystemTools.exposeAppToCarLauncher(adb, packageName);
+      addLog(msg, 'success');
+      // Refresh apps
+      const apps = await CarSystemTools.getInstalledApps(adb, false);
+      setInstalledApps(apps);
+    } catch (err: any) {
+      addLog(`فشل تفعيل التطبيق: ${err.message || err}`, 'error');
+    }
   };
 
   // Execute custom shell command
@@ -303,6 +351,8 @@ export default function App() {
           isConnected={isConnected}
           selectedMethod={selectedMethod}
           onSelectMethod={setSelectedMethod}
+          onLaunchApp={handleLaunchApp}
+          onExposeApp={handleExposeApp}
         />
 
         {/* Permissions & Special AppOps Manager */}
