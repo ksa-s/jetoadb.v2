@@ -14,7 +14,8 @@ import {
   ShieldCheck,
   Zap,
   Eye,
-  Tv
+  Tv,
+  Sparkles
 } from 'lucide-react';
 import { Adb } from '@yume-chan/adb';
 import { CarSystemTools } from '../lib/adb/car-system-tools';
@@ -115,6 +116,26 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
     }
   };
 
+  const [isExposingAll, setIsExposingAll] = useState(false);
+
+  const handleExposeAll = async () => {
+    if (!adb) return;
+    setIsExposingAll(true);
+    setFeedback({ type: 'success', message: 'جاري تفعيل وإظهار كافة التطبيقات في شاشة السيارة ولانشر البرامج...' });
+    try {
+      const res = await CarSystemTools.exposeAllAppsToCarLauncher(adb, (msg) => {
+        onLog(msg, 'info');
+      });
+      onLog(`تم تفعيل وإظهار ${res.count} تطبيق لواجهة السيارة.`, 'success');
+      setFeedback({ type: 'success', message: `تم تفعيل وتحديث ${res.count} تطبيق لشاشة ولانشر السيارة بنجاح!` });
+    } catch (e: any) {
+      onLog(`فشل تفعيل التطبيقات: ${e.message || e}`, 'error');
+      setFeedback({ type: 'error', message: e.message || 'فشل تفعيل التطبيقات' });
+    } finally {
+      setIsExposingAll(false);
+    }
+  };
+
   const handleClear = async (pkg: string) => {
     if (!adb) return;
     const confirm = window.confirm(`هل أنت متأكد من مسح بيانات التطبيق (${pkg}) بالكامل؟`);
@@ -211,8 +232,18 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
             </label>
 
             <button
+              onClick={handleExposeAll}
+              disabled={isLoading || isExposingAll}
+              className="px-3 py-1.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 border border-amber-500/50 text-amber-300 font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-amber-950/40"
+              title="تفعيل وإظهار كافة التطبيقات في شاشة السيارة ولانشر البرامج"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-amber-400 ${isExposingAll ? 'animate-spin' : ''}`} />
+              <span>⚡ إظهار كافة التطبيقات بالشاشة</span>
+            </button>
+
+            <button
               onClick={loadApps}
-              disabled={isLoading}
+              disabled={isLoading || isExposingAll}
               className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />

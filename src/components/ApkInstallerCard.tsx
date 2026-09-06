@@ -34,6 +34,7 @@ interface ApkInstallerCardProps {
   onSelectMethod: (method: InstallMethod) => void;
   onLaunchApp?: (packageName: string) => void;
   onExposeApp?: (packageName: string) => void;
+  onExposeAllApps?: () => void;
 }
 
 export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
@@ -49,6 +50,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
   onSelectMethod,
   onLaunchApp,
   onExposeApp,
+  onExposeAllApps,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -148,6 +150,17 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
             <span>إضافة APK +</span>
           </button>
 
+          {isConnected && onExposeAllApps && (
+            <button
+              onClick={onExposeAllApps}
+              className="px-3 py-1.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 border border-amber-500/50 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-amber-950/40"
+              title="إظهار وتفعيل كافة التطبيقات المثبتة في شاشة السيارة ولانشر البرامج فوراً"
+            >
+              <Eye className="w-3.5 h-3.5 text-amber-400" />
+              <span>⚡ إظهار كافة التطبيقات بالشاشة</span>
+            </button>
+          )}
+
           {apkList.length > 0 && (
             <>
               <button
@@ -193,18 +206,17 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (موصى به - متوافق مع كافة سيارات Desay SV وجيلي وتحديثات أندرويد)</option>
-              <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download - متوافق 100% مع شاشات Desay SV)</option>
-              <option value="modern_car">⚡ بروتوكول مسار النظام (/data/local/tmp وجلسات Package Sessions)</option>
+              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يبدأ بجلسة الحزم المباشرة ثم مسار النظام ثم التخزين)</option>
+              <option value="session">📦 بروتوكول جلسات الحزم المباشرة (Package Session Stream - بدون ملفات وبدون حظر FUSE)</option>
+              <option value="modern_car">⚡ بروتوكول مسار النظام المعتمد (/data/local/tmp المباشر)</option>
+              <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download)</option>
               <option value="stream">📡 البث الثنائي المباشر (Direct Binary Stream)</option>
-              <option value="session">📦 مدير جلسات أندرويد القياسي (PackageManager Session)</option>
-              <option value="sync_tmp">ممر tmp المباشر (Direct /data/local/tmp Sync)</option>
             </select>
           </div>
 
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ تم تحسين بروتوكولات التثبيت التلقائي والتفعيل لشاشة السيارة
+              ✓ تم إزالة قيود الأذونات والتوافق مع واجهة سيارات Desay SV
             </span>
           </div>
         </div>
@@ -212,21 +224,12 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
         {/* Informative Helper for Modern Car Protocol */}
         <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-slate-300">
-            {selectedMethod === 'modern_car' && '⚡ بروتوكول التحديثات الحديثة: مخصص للإصدارات وتحديثات السيارات الجديدة، ينقل الحزم إلى مسار النظام المعتمد /data/local/tmp ويستخدم جلسات الحزم لتجاوز حظر FUSE و SELinux كلياً.'}
-            {selectedMethod === 'auto' && 'الوضع الذكي: يكتشف نوع النظام تلقائياً، ويبدأ بالبروتوكول الحديث مع الرجوع للبروتوكولات السابقة عند الحاجة.'}
-            {selectedMethod === 'sdcard' && 'البروتوكول الكلاسيكي: ينقل الحزمة إلى /sdcard/Download/ (مناسب للإصدارات والشاشات الأقدم).'}
-            {selectedMethod === 'stream' && 'بث البيانات الثنائي المباشر إلى مدخل الحزم بدون تخزين وسيط.'}
-            {selectedMethod === 'session' && 'جلسات تثبيت مدير حزم أندرويد الرسمية (PackageManager Staging Session).'}
-            {selectedMethod === 'sync_tmp' && 'مزامنة ADB المباشرة إلى مسار /data/local/tmp والتثبيت بصلاحيات shell.'}
+            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر بروتوكول جلسة الحزم المباشرة بالذاكرة لتجاوز قيود التخزين، ثم ينتقل تلقائياً لمسار النظام /data/local/tmp ثم التخزين.'}
+            {selectedMethod === 'session' && '📦 جلسات الحزم المباشرة: يبث الـ APK مباشرة إلى ذاكرة مدير حزم أندرويد بدون كتابة ملفات وسيطة، ويتجاوز حظر FUSE و SELinux تماماً.'}
+            {selectedMethod === 'modern_car' && '⚡ مسار النظام المعتمد: ينقل الحزمة إلى /data/local/tmp ويمنحها تسمية shell_data_file لتجاوز قيود الأمان.'}
+            {selectedMethod === 'sdcard' && '💾 مسار التخزين: ينقل الحزمة إلى /sdcard/Download ويقوم بالتثبيت التقليدي.'}
+            {selectedMethod === 'stream' && '📡 البث المباشر: يوجه البيانات عبر مقبس البث الثنائي إلى مدخل pm install.'}
           </span>
-          {selectedMethod !== 'modern_car' && (
-            <button
-              onClick={() => onSelectMethod('modern_car')}
-              className="text-cyan-400 hover:text-cyan-300 underline font-medium cursor-pointer"
-            >
-              التبديل إلى بروتوكول التحديثات الحديثة ⚡
-            </button>
-          )}
         </div>
       </div>
 
@@ -345,7 +348,26 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                         title="إعادة التثبيت بالوضع التلقائي الذكي"
                       >
                         <Zap className="w-3 h-3 text-cyan-400 fill-cyan-400" />
-                        <span>الوضع التلقائي</span>
+                        <span>الوضع التلقائي الذكي</span>
+                      </button>
+
+                      <button
+                        onClick={() => onInstallSingle(item, 'session')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-semibold text-purple-300 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="التثبيت عبر جلسة الحزم المباشرة (بدون كتابة ملفات)"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>جلسة الحزم (Session)</span>
+                      </button>
+
+                      <button
+                        onClick={() => onInstallSingle(item, 'modern_car')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-750 border border-slate-700 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="التثبيت عبر مسار النظام /data/local/tmp"
+                      >
+                        <span>مسار النظام (/tmp)</span>
                       </button>
 
                       <button
@@ -355,17 +377,20 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                         title="التثبيت عبر بروتوكول التخزين /sdcard/Download"
                       >
                         <RotateCw className="w-3 h-3" />
-                        <span>بروتوكول التخزين (/sdcard)</span>
+                        <span>التخزين (/sdcard)</span>
                       </button>
 
-                      <button
-                        onClick={() => onInstallSingle(item, 'modern_car')}
-                        disabled={isInstalling || !isConnected}
-                        className="text-[11px] font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-750 border border-slate-700 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="التثبيت عبر مسار النظام /data/local/tmp"
-                      >
-                        <span>مسار النظام</span>
-                      </button>
+                      {item.packageName && onExposeApp && (
+                        <button
+                          onClick={() => onExposeApp(item.packageName!)}
+                          disabled={!isConnected}
+                          className="text-[11px] font-semibold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 border border-amber-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          title="إذا كان التطبيق مثبتاً بالفعل لكنه مخفي، اضغط هنا لإظهاره"
+                        >
+                          <Eye className="w-3 h-3 text-amber-400" />
+                          <span>إظهار في الشاشة</span>
+                        </button>
+                      )}
                     </div>
                   )}
 

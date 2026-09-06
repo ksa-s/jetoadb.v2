@@ -280,6 +280,26 @@ export default function App() {
     }
   };
 
+  // Expose ALL apps to car launcher
+  const handleExposeAllApps = async () => {
+    if (!adb) {
+      addLog('تنبيه: يجب الاتصال بالجهاز أولاً.', 'warning');
+      return;
+    }
+    addLog('جاري بدء تفعيل وإظهار كافة التطبيقات المثبتة في لانشر وشاشة السيارة...', 'info');
+    try {
+      const res = await CarSystemTools.exposeAllAppsToCarLauncher(adb, (msg) => {
+        addLog(msg, 'info');
+      });
+      addLog(`تم تفعيل وتحديث ${res.count} تطبيق لواجهة شاشة السيارة بنجاح!`, 'success');
+      // Refresh apps
+      const apps = await CarSystemTools.getInstalledApps(adb, false);
+      setInstalledApps(apps);
+    } catch (err: any) {
+      addLog(`فشل تفعيل التطبيقات: ${err.message || err}`, 'error');
+    }
+  };
+
   // Execute custom shell command
   const handleExecuteShell = async (command: string) => {
     if (!adb) {
@@ -353,6 +373,7 @@ export default function App() {
           onSelectMethod={setSelectedMethod}
           onLaunchApp={handleLaunchApp}
           onExposeApp={handleExposeApp}
+          onExposeAllApps={handleExposeAllApps}
         />
 
         {/* Permissions & Special AppOps Manager */}

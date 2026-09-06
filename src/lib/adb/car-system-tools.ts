@@ -102,25 +102,70 @@ export class CarSystemTools {
    * Forces the car screen launcher to detect and display the app
    */
   public static async exposeAppToCarLauncher(adb: Adb, packageName: string): Promise<string> {
-    const users = ['current', '0', '10'];
+    const users = ['current', '0', '10', '11'];
     for (const u of users) {
       try {
         await this.exec(adb, `cmd package install-existing --user ${u} ${packageName} 2>/dev/null`);
         await this.exec(adb, `pm install-existing --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `cmd package unhide --user ${u} ${packageName} 2>/dev/null`);
         await this.exec(adb, `pm unhide --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `pm set-application-hidden --user ${u} ${packageName} false 2>/dev/null`);
+        await this.exec(adb, `cmd package enable --user ${u} ${packageName} 2>/dev/null`);
         await this.exec(adb, `pm enable --user ${u} ${packageName} 2>/dev/null`);
         await this.exec(adb, `cmd package unsuspend --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `pm unsuspend --user ${u} ${packageName} 2>/dev/null`);
+        await this.exec(adb, `cmd package set-distracting-restriction --user ${u} --restriction none ${packageName} 2>/dev/null`);
+        await this.exec(adb, `cmd package set-distraction-optimized --user ${u} true ${packageName} 2>/dev/null`);
+        await this.exec(adb, `cmd car_service set-distraction-optimized ${packageName} true 2>/dev/null`);
       } catch {}
     }
     try {
       await this.exec(adb, `pm unhide ${packageName} 2>/dev/null`);
       await this.exec(adb, `pm enable ${packageName} 2>/dev/null`);
+      await this.exec(adb, `cmd package set-distraction-optimized true ${packageName} 2>/dev/null`);
+      await this.exec(adb, `appops set ${packageName} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
+      await this.exec(adb, `pm grant ${packageName} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
+      await this.exec(adb, `settings put global app_whitelist ${packageName} 2>/dev/null`);
+      await this.exec(adb, `monkey -p ${packageName} -c android.intent.category.LAUNCHER 1 2>/dev/null`);
       await this.exec(adb, `am broadcast -a android.intent.action.PACKAGE_ADDED -d package:${packageName} 2>/dev/null`);
       await this.exec(adb, `am broadcast -a android.intent.action.PACKAGE_CHANGED -d package:${packageName} 2>/dev/null`);
       await this.exec(adb, `am broadcast -a android.intent.action.PACKAGE_REPLACED -d package:${packageName} 2>/dev/null`);
+      await this.exec(adb, `am broadcast -a com.android.launcher.action.INSTALL_SHORTCUT 2>/dev/null`);
+      await this.exec(adb, `am broadcast -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null`);
     } catch {}
 
     return `تم تفعيل وتثبيت التطبيق (${packageName}) لجميع مستخدمي السيارة وتحديث واجهة البرامج.`;
+  }
+
+  /**
+   * Bulk activates and unhides all installed 3rd-party user apps on the car screen
+   */
+  public static async exposeAllAppsToCarLauncher(
+    adb: Adb,
+    onProgress?: (msg: string) => void
+  ): Promise<{ count: number; packages: string[] }> {
+    const out3 = await this.exec(adb, 'pm list packages -3 2>/dev/null || pm list packages -u 2>/dev/null');
+    const lines = out3.split('\n');
+    const packages: string[] = [];
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('package:')) {
+        const pkg = trimmed.substring(8).trim();
+        if (pkg && !packages.includes(pkg)) {
+          packages.push(pkg);
+        }
+      }
+    }
+
+    let count = 0;
+    for (const pkg of packages) {
+      onProgress?.(`تفعيل وإظهار: ${pkg}...`);
+      await this.exposeAppToCarLauncher(adb, pkg);
+      count++;
+    }
+
+    return { count, packages };
   }
 
   /**
