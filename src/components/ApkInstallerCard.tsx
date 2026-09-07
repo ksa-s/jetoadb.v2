@@ -220,8 +220,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات والمسار الداخلي)</option>
-              <option value="jetour_fallback">🛡️ بروتوكول مسار النظام الداخلي المستقل (/data/local/tmp - نفس مسار جيتور بدون أي برامج وسيطة)</option>
+              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات مع النقر التلقائي ومراقبة الشاشة)</option>
+              <option value="jetour_fallback">🛡️ بروتوكول مسار النظام الداخلي المستقل + النقر التلقائي (/data/local/tmp - لشاشات جيتور T2 وهافال)</option>
               <option value="session">📦 بروتوكول جلسات الحزم المباشرة (Package Session Stream - بدون ملفات وبدون حظر FUSE)</option>
               <option value="modern_car">⚡ بروتوكول مسار النظام المعتمد (/data/local/tmp المباشر)</option>
               <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download)</option>
@@ -475,6 +475,24 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                       >
                         <Zap className="w-3 h-3 fill-current" />
                         <span>تثبيت فوري بالبروتوكول الحديث</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {(item.errorMessage.toLowerCase().includes('abort') ||
+                    item.errorMessage.includes('شاشة السيارة') ||
+                    item.errorMessage.includes('زر (تثبيت)')) && (
+                    <div className="mr-6 bg-amber-950/50 border border-amber-500/40 rounded-lg p-2.5 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                      <span className="text-amber-200 font-medium">
+                        🚗 نظام جيتور يطلب تأكيد واجهة التثبيت. اضغط هنا لإعادة التثبيت مع النقر التلقائي الفوري على زر (تثبيت) الأخضر ومراقبة الاكتمال.
+                      </span>
+                      <button
+                        onClick={() => onInstallSingle(item, 'jetour_fallback')}
+                        disabled={isInstalling || !isConnected}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow"
+                      >
+                        <Zap className="w-3.5 h-3.5 fill-current text-amber-200" />
+                        <span>إعادة التثبيت مع النقر التلقائي على الشاشة</span>
                       </button>
                     </div>
                   )}

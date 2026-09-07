@@ -897,13 +897,14 @@ export class ApkInstaller {
       }
     }
 
-    // Strategy 6: Native Car PackageInstaller UI Fallback
-    // If automotive firmware enforces absolute kernel/SELinux block on silent installs,
-    // invoke Android's official PackageInstaller GUI on the head unit screen so the user can tap "Install"
+    // Strategy 6: Native Car PackageInstaller UI with Intelligent Auto-Confirmation & Live Polling
+    // Head unit firmware (DesaySV / Jetour T2 / Chery) enforces user confirmation dialog for non-system apps.
+    // We launch the official PackageInstaller dialog, automatically tap the "تثبيت" (Install) button via ADB,
+    // and monitor the installation progress in real-time until completion.
     if (!isSuccess) {
-      onLog?.('• تجربة [6]: تفعيل واجهة تثبيت الحزم الرسمية على شاشة السيارة مباشرة (PackageInstaller Intent)...', 'info');
+      onLog?.('• تجربة [6]: تفعيل واجهة تثبيت الحزم الرسمية على شاشة السيارة مع النقر التلقائي الذكي على زر التثبيت...', 'info');
       try {
-        // Also copy to sdcard download so system package installer can always open it
+        // Also copy to sdcard download as a reliable fallback for system package installer
         await this.execShell(adb, `cp "${targetPath}" "/sdcard/Download/${safeName}" 2>/dev/null || cp "${targetPath}" "/sdcard/${safeName}" 2>/dev/null`);
         await this.execShell(adb, `chmod 777 "/sdcard/Download/${safeName}" 2>/dev/null || chmod 777 "/sdcard/${safeName}" 2>/dev/null`);
 
@@ -911,9 +912,23 @@ export class ApkInstaller {
         const intentRes = await this.execShell(adb, intentCmd);
         onLog?.(`> تم إرسال أمر واجهة التثبيت للشاشة: ${intentRes.trim() || 'تم فتح نافذة التثبيت'}`, 'info');
 
-        // Allow time for user or system auto-installer
-        onLog?.('يرجى التحقق من شاشة السيارة: إذا ظهرت نافذة تأكيد التثبيت اضغط (تثبيت / Install)...', 'info');
-        await new Promise((r) => setTimeout(r, 1500));
+        // Automatically detect dialog, click "تثبيت" / "Install", and poll for completion
+        const autoConfirmRes = await this.autoConfirmAndMonitorInstall(
+          adb,
+          beforePkgsRaw,
+          knownPackageName,
+          onLog,
+          25 // 25 seconds polling
+        );
+
+        if (autoConfirmRes.success) {
+          isSuccess = true;
+          if (autoConfirmRes.packageName) {
+            newlyFoundPkg = autoConfirmRes.packageName;
+          }
+          // Clean up the temporary copy in Download since install succeeded
+          await this.execShell(adb, `rm -f "/sdcard/Download/${safeName}" "/sdcard/${safeName}" 2>/dev/null`);
+        }
       } catch (errIntent: any) {
         onLog?.(`ملاحظة واجهة التثبيت: ${errIntent?.message || errIntent}`, 'info');
       }
@@ -1001,6 +1016,131 @@ export class ApkInstaller {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Automatically confirms the Car PackageInstaller dialog by simulating click on "تثبيت" / "Install"
+   * and continuously monitoring the installation progress.
+   */
+  public static async autoConfirmAndMonitorInstall(
+    adb: Adb,
+    beforePkgsRaw: string,
+    knownPackageName?: string,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    timeoutSeconds: number = 25
+  ): Promise<{ success: boolean; packageName?: string }> {
+    onLog?.('جارٍ فحص شاشة السيارة وتحديد موقع زر (تثبيت)...', 'info');
+
+    // Wait a brief moment for the dialog activity to render
+    await new Promise((r) => setTimeout(r, 600));
+
+    // 1. Detect screen resolution
+    let screenWidth = 1920;
+    let screenHeight = 1080;
+    try {
+      const sizeOut = await this.execShell(adb, 'wm size 2>/dev/null');
+      const match = sizeOut.match(/(\d+)x(\d+)/);
+      if (match && match[1] && match[2]) {
+        const w = parseInt(match[1], 10);
+        const h = parseInt(match[2], 10);
+        screenWidth = Math.max(w, h);
+        screenHeight = Math.min(w, h);
+      }
+    } catch {}
+
+    // In Jetour T2 / Chery DesaySV head units, the install dialog is centered:
+    // Width center: 50%
+    // Height of "تثبيت" (Install) button center: 57.5%
+    let targetX = Math.round(screenWidth * 0.5);
+    let targetY = Math.round(screenHeight * 0.575);
+    let foundExactBounds = false;
+
+    // 2. Try uiautomator dump to locate exact coordinates of "تثبيت" or "Install"
+    try {
+      await this.execShell(adb, 'uiautomator dump /data/local/tmp/uidump.xml 2>/dev/null');
+      const dump = await this.execShell(adb, 'cat /data/local/tmp/uidump.xml 2>/dev/null');
+      if (dump && dump.includes('bounds=')) {
+        const btnRegex = /text="(?:تثبيت|Install|INSTALL)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/i;
+        const match = dump.match(btnRegex);
+        if (match && match[1] && match[2] && match[3] && match[4]) {
+          const x1 = parseInt(match[1], 10);
+          const y1 = parseInt(match[2], 10);
+          const x2 = parseInt(match[3], 10);
+          const y2 = parseInt(match[4], 10);
+          targetX = Math.round((x1 + x2) / 2);
+          targetY = Math.round((y1 + y2) / 2);
+          foundExactBounds = true;
+          onLog?.(`> تم رصد إحداثيات زر التثبيت بدقة: [X: ${targetX}, Y: ${targetY}]`, 'info');
+        }
+      }
+      await this.execShell(adb, 'rm -f /data/local/tmp/uidump.xml 2>/dev/null');
+    } catch {}
+
+    // 3. Perform initial click and key events
+    onLog?.(`> تنفيذ النقر التلقائي على زر (تثبيت) [${targetX}, ${targetY}]...`, 'info');
+    await this.execShell(adb, `input tap ${targetX} ${targetY} 2>/dev/null`);
+    await this.execShell(adb, 'input keyevent 66 2>/dev/null'); // KEYCODE_ENTER
+    await this.execShell(adb, 'input keyevent 23 2>/dev/null'); // KEYCODE_DPAD_CENTER
+
+    // 4. Monitoring polling loop
+    const startTime = Date.now();
+    const maxWaitMs = timeoutSeconds * 1000;
+    let newlyFoundPkg: string | undefined;
+
+    while (Date.now() - startTime < maxWaitMs) {
+      await new Promise((r) => setTimeout(r, 1200));
+
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+
+      try {
+        const afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
+
+        if (knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
+          newlyFoundPkg = knownPackageName;
+          break;
+        }
+
+        const diff = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
+        if (diff) {
+          newlyFoundPkg = diff;
+          break;
+        }
+      } catch {}
+
+      // Assist click after 2.5s and 5s in case dialog had transition animation
+      if (elapsedSec === 2 || elapsedSec === 5) {
+        onLog?.(`> إرسال نقرة تأكيد مساندة (ثانية ${elapsedSec})...`, 'info');
+        await this.execShell(adb, `input tap ${targetX} ${targetY} 2>/dev/null`);
+        if (!foundExactBounds) {
+          await this.execShell(adb, `input tap ${targetX} ${Math.round(screenHeight * 0.565)} 2>/dev/null`);
+          await this.execShell(adb, `input tap ${targetX} ${Math.round(screenHeight * 0.585)} 2>/dev/null`);
+        }
+        await this.execShell(adb, 'input keyevent 66 2>/dev/null');
+      }
+
+      if (elapsedSec % 3 === 0) {
+        onLog?.(`في انتظار اكتمال التثبيت على شاشة السيارة (${elapsedSec}/${timeoutSeconds} ث)...`, 'info');
+      }
+    }
+
+    if (newlyFoundPkg) {
+      onLog?.(`تم تأكيد اكتمال التثبيت بنجاح: [${newlyFoundPkg}]`, 'success');
+      return { success: true, packageName: newlyFoundPkg };
+    }
+
+    // Final check across -3 (third party packages)
+    try {
+      const finalPkgsRaw = await this.execShell(adb, 'pm list packages -3 2>/dev/null');
+      if (knownPackageName && finalPkgsRaw.includes(knownPackageName)) {
+        return { success: true, packageName: knownPackageName };
+      }
+      const finalDiff = this.findDiffPackage(beforePkgsRaw, finalPkgsRaw);
+      if (finalDiff) {
+        return { success: true, packageName: finalDiff };
+      }
+    } catch {}
+
+    return { success: false };
   }
 
   /**
@@ -1123,6 +1263,25 @@ export class ApkInstaller {
       } catch (ePm: any) {
         onLog?.(`نتيجة pm.install: ${ePm.message || ePm}`, 'info');
       }
+    }
+
+    // Fallback: Launch Official PackageInstaller UI with Auto-Click Confirmation before giving up
+    if (!isSuccess) {
+      onLog?.('تجربة التأكيد عبر واجهة التثبيت الرسمية للشاشة مع النقر التلقائي...', 'info');
+      try {
+        const intentCmd = `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null || am start -a android.intent.action.INSTALL_PACKAGE -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`;
+        await this.execShell(adb, intentCmd);
+        const autoConfirmRes = await this.autoConfirmAndMonitorInstall(
+          adb,
+          '',
+          knownPackageName,
+          onLog,
+          20
+        );
+        if (autoConfirmRes.success) {
+          isSuccess = true;
+        }
+      } catch {}
     }
 
     // Always clean up temp file
@@ -1654,6 +1813,10 @@ export class ApkInstaller {
 
     if (err.includes('INSTALL_GRANT_RUNTIME_PERMISSIONS') || err.includes('SECURITYEXCEPTION') || err.includes('INSTALL_PERMISSIONS')) {
       return 'رفض نظام السيارة الصلاحيات المباشرة أثناء التثبيت (SecurityException). يرجى استخدام (بروتوكول جيتور والأنظمة المحمية r.sh) لتجاوز قيود الحماية.';
+    }
+
+    if (err.includes('ABORTED')) {
+      return 'حماية نظام السيارة (جيتور / DesaySV) تمنع التثبيت الصامت من الخلفية وتتطلب واجهة التثبيت الرسمية. تم إرسال أمر النقر التلقائي لزر (تثبيت) الأخضر الظاهر على شاشتك.';
     }
 
     if (err.includes('INSTALL_FAILED_ALREADY_EXISTS') || err.includes('UPDATE_INCOMPATIBLE') || err.includes('SIGNATURE_MISMATCH')) {
