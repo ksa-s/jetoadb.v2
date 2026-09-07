@@ -17,7 +17,8 @@ import {
   Zap,
   ShieldAlert,
   Eye,
-  Tv
+  Tv,
+  Unlock,
 } from 'lucide-react';
 import { parseApkMetadata } from '../lib/apk-parser';
 
@@ -35,6 +36,7 @@ interface ApkInstallerCardProps {
   onLaunchApp?: (packageName: string) => void;
   onExposeApp?: (packageName: string) => void;
   onExposeAllApps?: () => void;
+  onUnlockRestrictions?: () => void;
 }
 
 export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
@@ -51,6 +53,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
   onLaunchApp,
   onExposeApp,
   onExposeAllApps,
+  onUnlockRestrictions,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -149,6 +152,17 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
             <Upload className="w-3.5 h-3.5 text-cyan-400" />
             <span>إضافة APK +</span>
           </button>
+
+          {isConnected && onUnlockRestrictions && (
+            <button
+              onClick={onUnlockRestrictions}
+              className="px-3 py-1.5 rounded-xl bg-emerald-950/70 hover:bg-emerald-900/80 border border-emerald-500/50 text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-emerald-950/40"
+              title="إلغاء قيود تثبيت التطبيقات (DISALLOW_INSTALL_APPS) والسماح بالمصادر غير المعروفة لجميع المستخدمين"
+            >
+              <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+              <span>🔓 فك قيود التثبيت</span>
+            </button>
+          )}
 
           {isConnected && onExposeAllApps && (
             <button

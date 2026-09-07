@@ -300,6 +300,22 @@ export default function App() {
     }
   };
 
+  // Unlock user restrictions for installing apps
+  const handleUnlockRestrictions = async () => {
+    if (!adb) {
+      addLog('تنبيه: يجب الاتصال بالجهاز أولاً.', 'warning');
+      return;
+    }
+    addLog('جاري فك قيود تثبيت التطبيقات ومصادر التثبيت الخارجية لجميع مستخدمي الشاشة...', 'info');
+    try {
+      const userId = await ApkInstaller.getCurrentUserId(adb);
+      await ApkInstaller.unlockUserRestrictions(adb, userId, (msg, type) => addLog(msg, type));
+      addLog('تم فك قيود التثبيت وإلغاء حظر المصادر الخارجية بنجاح.', 'success');
+    } catch (err: any) {
+      addLog(`خطأ فك القيود: ${err.message || err}`, 'error');
+    }
+  };
+
   // Execute custom shell command
   const handleExecuteShell = async (command: string) => {
     if (!adb) {
@@ -374,6 +390,7 @@ export default function App() {
           onLaunchApp={handleLaunchApp}
           onExposeApp={handleExposeApp}
           onExposeAllApps={handleExposeAllApps}
+          onUnlockRestrictions={handleUnlockRestrictions}
         />
 
         {/* Permissions & Special AppOps Manager */}

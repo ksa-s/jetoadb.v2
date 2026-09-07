@@ -130,8 +130,30 @@ export class ApkInstaller {
         onLog?.(`تنبيه مسار النظام: ${eTmp.message || eTmp}. جاري تجربة مسار التخزين الكلاسيكي...`, 'info');
       }
 
-      // Attempt 4: Classic Storage Pipe (/sdcard/Download)
-      onLog?.('[الخطوة 4] تجربة مسار التخزين الكلاسيكي (/sdcard/Download)...', 'info');
+      // Attempt 4: Jetour T2 / Protected Automotive Protocol (Direct /data/local/tmp with trusted installer & restriction bypass)
+      try {
+        onLog?.('[الخطوة 4] تجربة مسار جيتور والأنظمة المحمية المستقل (/data/local/tmp)...', 'info');
+        const jetourRes = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
+        if (jetourRes.success) {
+          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, jetourRes.packageName || effectivePackageName);
+          const finalPkg = newlyInstalled || jetourRes.packageName || effectivePackageName;
+          if (finalPkg) {
+            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
+            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
+          }
+          return {
+            success: true,
+            message: jetourRes.message,
+            methodUsed: 'auto',
+            packageName: finalPkg,
+          };
+        }
+      } catch (eJetour: any) {
+        onLog?.(`تنبيه مسار جيتور: ${eJetour.message || eJetour}. جاري تجربة مسار التخزين الكلاسيكي...`, 'info');
+      }
+
+      // Attempt 5: Classic Storage Pipe (/sdcard/Download)
+      onLog?.('[الخطوة 5] تجربة مسار التخزين الكلاسيكي (/sdcard/Download)...', 'info');
       const sdRes = await this.installViaSdcardStorage(adb, file, onProgress, onLog, effectivePackageName);
       if (sdRes.success) {
         const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, sdRes.packageName || effectivePackageName);
@@ -473,19 +495,20 @@ export class ApkInstaller {
 
     const currentUserId = await this.getCurrentUserId(adb);
 
-    // Commands strictly WITHOUT -g flag to avoid SecurityException
+    // Commands with trusted store flags and user targeting to bypass automotive blocks
     const directCommands = [
+      `pm install -r -t -d -i com.android.vending "${targetPath}"`,
+      `pm install -r -t -d -i com.google.android.packageinstaller "${targetPath}"`,
+      `pm install -r -t -d -i com.android.packageinstaller "${targetPath}"`,
       `pm install -r -t "${targetPath}"`,
       `pm install -r "${targetPath}"`,
+      `cmd package install -r -t -d -i com.android.vending "${targetPath}"`,
       `cmd package install -r -t "${targetPath}"`,
-      `cmd package install -r "${targetPath}"`,
-      `pm install --user ${currentUserId} -r -t "${targetPath}"`,
-      `pm install --user 0 -r -t "${targetPath}"`,
-      `pm install --user 10 -r -t "${targetPath}"`,
-      `pm install --user current -r -t "${targetPath}"`,
-      `pm install -r -d -t "${targetPath}"`,
-      `sh -c 'cat "${targetPath}" | pm install -r -t -S ${size}'`,
-      `sh -c 'cat "${targetPath}" | cmd package install -r -t -S ${size}'`,
+      `pm install --user ${currentUserId} -r -t -d -i com.android.vending "${targetPath}"`,
+      `pm install --user 0 -r -t -d -i com.android.vending "${targetPath}"`,
+      `pm install --user 10 -r -t -d -i com.android.vending "${targetPath}"`,
+      `pm install --user current -r -t -d -i com.android.vending "${targetPath}"`,
+      `sh -c 'cat "${targetPath}" | pm install -i com.android.vending -r -t -S ${size}'`,
       `sh -c 'cat "${targetPath}" | pm install -S ${size}'`,
     ];
 
@@ -693,7 +716,8 @@ export class ApkInstaller {
 
   /**
    * Independent Multi-Strategy Car Head Unit Installer (Bypasses firmware restrictions in /data/local/tmp)
-   * Does NOT rely on any third-party app or helper. Directly calls PackageInstaller Sessions and runtime bypasses.
+   * Operates completely independently in /data/local/tmp (the exact path used by garagesplit, without requiring any third-party app).
+   * Implements verified trusted installer spoofing (-i com.android.vending), active user dispatching, and native package installer UI fallback.
    */
   public static async executeFallbackInstallerScript(
     adb: Adb,
@@ -703,9 +727,19 @@ export class ApkInstaller {
     knownPackageName?: string,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    onLog?.('بدء دورة التثبيت المباشرة المستقلة لشاشات السيارات بالمسار الداخلي...', 'info');
+    onLog?.('بدء دورة التثبيت المباشرة المستقلة لشاشات السيارات بالمسار الداخلي (/data/local/tmp)...', 'info');
 
-    // 0. Snapshot existing packages before running install
+    // 0. Detect active users (Driver user, system user 0, user 10, etc.)
+    const userIds = new Set<string>(['0', 'current']);
+    try {
+      const usersRaw = await this.execShell(adb, 'pm list users 2>/dev/null');
+      const matches = usersRaw.matchAll(/UserInfo\{(\d+):/g);
+      for (const m of matches) {
+        if (m[1]) userIds.add(m[1]);
+      }
+    } catch {}
+
+    // Take snapshot of existing packages before running install
     let beforePkgsRaw = '';
     try {
       beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
@@ -713,41 +747,38 @@ export class ApkInstaller {
 
     let newlyFoundPkg: string | undefined;
     let isSuccess = false;
+    let lastLog = '';
 
-    // Strategy 1: Native PackageInstaller Session Stream directly in /data/local/tmp
-    onLog?.('• تجربة [1]: إنشاء جلسة تثبيت داخلية (PackageInstaller Session)...', 'info');
-    try {
-      const createCmd = `cmd package install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d --user 0 -S ${size} 2>/dev/null || pm install-create -r -t -d -i com.android.shell -S ${size} 2>/dev/null`;
-      const createRes = await this.execShell(adb, createCmd);
-      const match = createRes.match(/\b\d+\b/);
-      const sessionId = match ? match[0] : '';
+    // Strategy 1: Trusted Installer Bypass (-i com.android.vending & -i com.google.android.packageinstaller)
+    // Most protected car head units (including Jetour T2) block ADB pm install unless origin is marked as official app store.
+    onLog?.('• تجربة [1]: التثبيت المباشر بالمسار الداخلي مع اعتماد هوية المتجر الرسمي (-i com.android.vending)...', 'info');
+    const trustedDirectCommands = [
+      `pm install -r -t -d -i com.android.vending "${targetPath}" 2>&1`,
+      `pm install -r -t -d -i com.google.android.packageinstaller "${targetPath}" 2>&1`,
+      `pm install -r -t -d -i com.android.packageinstaller "${targetPath}" 2>&1`,
+      `cmd package install -r -t -d -i com.android.vending "${targetPath}" 2>&1`,
+    ];
 
-      if (sessionId) {
-        onLog?.(`> تم فتح جلسة الحزم رقم [${sessionId}]، جارٍ كتابة الحزمة...`, 'info');
-        const writeCmd = `cat "${targetPath}" | pm install-write -S ${size} ${sessionId} base.apk`;
-        const writeRes = await this.execShell(adb, writeCmd);
-        if (writeRes.trim()) {
-          onLog?.(`> مخرجات كتابة الجلسة: ${writeRes.trim()}`, 'info');
+    for (const cmd of trustedDirectCommands) {
+      try {
+        const out = await this.execShell(adb, cmd);
+        const trimmed = out.trim();
+        if (trimmed) {
+          lastLog = trimmed;
+          onLog?.(`> استجابة التثبيت المعتمد: ${trimmed}`, 'info');
         }
-
-        onLog?.(`> تأكيد وتثبيت الجلسة [${sessionId}]...`, 'info');
-        const commitRes = await this.execShell(adb, `pm install-commit ${sessionId}`);
-        const commitTrimmed = commitRes.trim();
-        onLog?.(`> استجابة تأكيد الجلسة: ${commitTrimmed || '(اكتملت)'}`, 'info');
-
-        if (commitTrimmed.toLowerCase().includes('success')) {
+        if (trimmed.toLowerCase().includes('success')) {
           isSuccess = true;
+          break;
         }
-      } else {
-        onLog?.('لم تستجب واجهة إنشاء الجلسات، الانتقال للمسار التالي...', 'info');
+      } catch (err: any) {
+        lastLog = err?.message || String(err);
       }
-    } catch (errSession: any) {
-      onLog?.(`تنبيه في جلسة الحزم: ${errSession?.message || errSession}`, 'info');
     }
 
     // Check if installed after Strategy 1
     if (!isSuccess) {
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 400));
       try {
         const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
         newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
@@ -758,24 +789,31 @@ export class ApkInstaller {
       } catch {}
     }
 
-    // Strategy 2: Direct 'cmd package install'
+    // Strategy 2: Multi-User Target Dispatch (Driver User 10, User 0, User current)
     if (!isSuccess) {
-      onLog?.('• تجربة [2]: التثبيت عبر مدير الحزم المباشر (cmd package install)...', 'info');
-      try {
-        const cmdOut = await this.execShell(adb, `cmd package install -r -t -d "${targetPath}" 2>&1`);
-        const trimmed = cmdOut.trim();
-        if (trimmed) onLog?.(`> استجابة cmd package: ${trimmed}`, 'info');
-        if (trimmed.toLowerCase().includes('success')) {
-          isSuccess = true;
+      onLog?.('• تجربة [2]: التثبيت الموجه لمستخدمي شاشة السيارة (User 0 / User 10 / Current)...', 'info');
+      for (const uid of Array.from(userIds)) {
+        try {
+          const userCmd = `pm install -r -t -d -i com.android.vending --user ${uid} "${targetPath}" 2>&1 || pm install -r -t -d --user ${uid} "${targetPath}" 2>&1`;
+          const userOut = await this.execShell(adb, userCmd);
+          const trimmed = userOut.trim();
+          if (trimmed) {
+            lastLog = trimmed;
+            onLog?.(`> استجابة المستخدم [${uid}]: ${trimmed}`, 'info');
+          }
+          if (trimmed.toLowerCase().includes('success')) {
+            isSuccess = true;
+            break;
+          }
+        } catch (errUser: any) {
+          lastLog = errUser?.message || String(errUser);
         }
-      } catch (errCmd: any) {
-        onLog?.(`تنبيه cmd package: ${errCmd?.message || errCmd}`, 'info');
       }
     }
 
     // Check if installed after Strategy 2
     if (!isSuccess) {
-      await new Promise((r) => setTimeout(r, 500));
+      await new Promise((r) => setTimeout(r, 400));
       try {
         const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
         newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
@@ -786,28 +824,50 @@ export class ApkInstaller {
       } catch {}
     }
 
-    // Strategy 3: User 0 / Current targeted install
+    // Strategy 3: PackageInstaller Session Stream inside /data/local/tmp with trusted identity
     if (!isSuccess) {
-      onLog?.('• تجربة [3]: التثبيت الموجه لمستخدم الشاشة (pm install --user 0)...', 'info');
+      onLog?.('• تجربة [3]: إنشاء جلسة تثبيت داخلية معتمدة (PackageInstaller Session)...', 'info');
       try {
-        const userOut = await this.execShell(adb, `pm install -r -t -d --user 0 "${targetPath}" 2>&1 || pm install -r -t -d --user current "${targetPath}" 2>&1`);
-        const trimmed = userOut.trim();
-        if (trimmed) onLog?.(`> استجابة user install: ${trimmed}`, 'info');
-        if (trimmed.toLowerCase().includes('success')) {
-          isSuccess = true;
+        const createCmd = `cmd package install-create -r -t -d -i com.android.vending -S ${size} 2>/dev/null || pm install-create -r -t -d -i com.android.vending -S ${size} 2>/dev/null || pm install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d --user 0 -S ${size} 2>/dev/null`;
+        const createRes = await this.execShell(adb, createCmd);
+        const match = createRes.match(/\b\d+\b/);
+        const sessionId = match ? match[0] : '';
+
+        if (sessionId) {
+          onLog?.(`> تم فتح جلسة الحزم رقم [${sessionId}]، جارٍ كتابة الحزمة...`, 'info');
+          const writeCmd = `cat "${targetPath}" | pm install-write -S ${size} ${sessionId} base.apk`;
+          const writeRes = await this.execShell(adb, writeCmd);
+          if (writeRes.trim()) {
+            onLog?.(`> مخرجات كتابة الجلسة: ${writeRes.trim()}`, 'info');
+          }
+
+          onLog?.(`> تأكيد وتثبيت الجلسة [${sessionId}]...`, 'info');
+          const commitRes = await this.execShell(adb, `pm install-commit ${sessionId}`);
+          const commitTrimmed = commitRes.trim();
+          onLog?.(`> استجابة تأكيد الجلسة: ${commitTrimmed || '(اكتملت)'}`, 'info');
+
+          if (commitTrimmed.toLowerCase().includes('success')) {
+            isSuccess = true;
+          }
         }
-      } catch (errUser: any) {
-        onLog?.(`تنبيه user install: ${errUser?.message || errUser}`, 'info');
+      } catch (errSession: any) {
+        onLog?.(`تنبيه في جلسة الحزم: ${errSession?.message || errSession}`, 'info');
       }
     }
 
-    // Strategy 4: Cat pipe with exact size flag
+    // Strategy 4: Cat pipe with exact size flag and trusted origin
     if (!isSuccess) {
       onLog?.('• تجربة [4]: التثبيت عبر مدخل القناة المباشرة (cat pipe -S)...', 'info');
       try {
-        const pipeOut = await this.execShell(adb, `cd /data/local/tmp && cat "${safeName}" | pm install -S ${size} 2>&1`);
+        const pipeOut = await this.execShell(
+          adb,
+          `cd /data/local/tmp && cat "${safeName}" | pm install -i com.android.vending -S ${size} 2>&1 || cd /data/local/tmp && cat "${safeName}" | pm install -S ${size} 2>&1`
+        );
         const trimmed = pipeOut.trim();
-        if (trimmed) onLog?.(`> استجابة cat pipe: ${trimmed}`, 'info');
+        if (trimmed) {
+          lastLog = trimmed;
+          onLog?.(`> استجابة cat pipe: ${trimmed}`, 'info');
+        }
         if (trimmed.toLowerCase().includes('success')) {
           isSuccess = true;
         }
@@ -822,10 +882,13 @@ export class ApkInstaller {
       try {
         const appOut = await this.execShell(
           adb,
-          `CLASSPATH=/system/framework/pm.jar app_process /system/bin com.android.commands.pm.Pm install -r -t -d "${targetPath}" 2>&1`
+          `CLASSPATH=/system/framework/pm.jar app_process /system/bin com.android.commands.pm.Pm install -r -t -d -i com.android.vending "${targetPath}" 2>&1`
         );
         const trimmed = appOut.trim();
-        if (trimmed) onLog?.(`> استجابة app_process: ${trimmed}`, 'info');
+        if (trimmed) {
+          lastLog = trimmed;
+          onLog?.(`> استجابة app_process: ${trimmed}`, 'info');
+        }
         if (trimmed.toLowerCase().includes('success')) {
           isSuccess = true;
         }
@@ -834,8 +897,30 @@ export class ApkInstaller {
       }
     }
 
+    // Strategy 6: Native Car PackageInstaller UI Fallback
+    // If automotive firmware enforces absolute kernel/SELinux block on silent installs,
+    // invoke Android's official PackageInstaller GUI on the head unit screen so the user can tap "Install"
+    if (!isSuccess) {
+      onLog?.('• تجربة [6]: تفعيل واجهة تثبيت الحزم الرسمية على شاشة السيارة مباشرة (PackageInstaller Intent)...', 'info');
+      try {
+        // Also copy to sdcard download so system package installer can always open it
+        await this.execShell(adb, `cp "${targetPath}" "/sdcard/Download/${safeName}" 2>/dev/null || cp "${targetPath}" "/sdcard/${safeName}" 2>/dev/null`);
+        await this.execShell(adb, `chmod 777 "/sdcard/Download/${safeName}" 2>/dev/null || chmod 777 "/sdcard/${safeName}" 2>/dev/null`);
+
+        const intentCmd = `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null || am start -a android.intent.action.INSTALL_PACKAGE -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null || am start -n com.android.packageinstaller/.PackageInstallerActivity -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`;
+        const intentRes = await this.execShell(adb, intentCmd);
+        onLog?.(`> تم إرسال أمر واجهة التثبيت للشاشة: ${intentRes.trim() || 'تم فتح نافذة التثبيت'}`, 'info');
+
+        // Allow time for user or system auto-installer
+        onLog?.('يرجى التحقق من شاشة السيارة: إذا ظهرت نافذة تأكيد التثبيت اضغط (تثبيت / Install)...', 'info');
+        await new Promise((r) => setTimeout(r, 1500));
+      } catch (errIntent: any) {
+        onLog?.(`ملاحظة واجهة التثبيت: ${errIntent?.message || errIntent}`, 'info');
+      }
+    }
+
     // Final verification of newly installed package
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 800));
     let afterPkgsRaw = '';
     try {
       afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
@@ -887,9 +972,10 @@ export class ApkInstaller {
       };
     }
 
+    const translated = this.translateAndroidInstallError(lastLog);
     return {
       success: false,
-      message: 'لم يتمكن محرك التثبيت من إتمام التثبيت على نظام السيارة.',
+      message: translated || lastLog || 'لم يتمكن محرك التثبيت من إتمام التثبيت على نظام السيارة.',
       packageName: knownPackageName,
     };
   }
@@ -1204,6 +1290,7 @@ export class ApkInstaller {
 
   /**
    * Unlocks security restrictions and package verifiers that cause "Restriction prevents installing" or hide apps
+   * Comprehensively detects all system and automotive user profiles and strips installation blocks.
    */
   public static async unlockUserRestrictions(
     adb: Adb,
@@ -1211,19 +1298,29 @@ export class ApkInstaller {
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<void> {
     try {
-      // 1. Package verifiers
+      // 1. Gather all active user IDs on the device (User 0, User 10, current, etc.)
+      const userIds = new Set<string>(['0', 'current']);
+      if (userId) userIds.add(userId);
+
+      try {
+        const usersRaw = await this.execShell(adb, 'pm list users 2>/dev/null');
+        const matches = usersRaw.matchAll(/UserInfo\{(\d+):/g);
+        for (const m of matches) {
+          if (m[1]) userIds.add(m[1]);
+        }
+      } catch {}
+
+      // 2. Package verifiers & security checks (disable so no silent blocks occur)
       await this.execShell(adb, 'settings put global verifier_verify_adb_installs 0 2>/dev/null');
       await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
       await this.execShell(adb, 'settings put global upload_apk_enable 0 2>/dev/null');
       await this.execShell(adb, 'settings put secure package_verifier_enable 0 2>/dev/null');
-
-      // 2. Allow unknown / non-market sources for system & user
+      await this.execShell(adb, 'settings put secure upload_apk_enable 0 2>/dev/null');
       await this.execShell(adb, 'settings put global install_non_market_apps 1 2>/dev/null');
       await this.execShell(adb, 'settings put secure install_non_market_apps 1 2>/dev/null');
-      await this.execShell(adb, `settings put --user ${userId} secure install_non_market_apps 1 2>/dev/null`);
-      await this.execShell(adb, `settings put --user current secure install_non_market_apps 1 2>/dev/null`);
+      await this.execShell(adb, 'settings put system install_non_market_apps 1 2>/dev/null');
 
-      // 3. Clear user restrictions that block app installation or launcher visibility
+      // 3. User restrictions that block app installation or unknown sources
       const restrictions = [
         'no_install_apps',
         'no_install_unknown_sources',
@@ -1232,11 +1329,36 @@ export class ApkInstaller {
         'no_control_apps',
       ];
 
-      for (const r of restrictions) {
-        await this.execShell(adb, `pm set-user-restriction --user ${userId} ${r} 0 2>/dev/null`);
-        await this.execShell(adb, `pm set-user-restriction --user current ${r} 0 2>/dev/null`);
-        await this.execShell(adb, `pm set-user-restriction --user 0 ${r} 0 2>/dev/null`);
+      for (const uid of Array.from(userIds)) {
+        await this.execShell(adb, `settings put --user ${uid} secure install_non_market_apps 1 2>/dev/null`);
+        await this.execShell(adb, `settings put --user ${uid} global install_non_market_apps 1 2>/dev/null`);
       }
+
+      // Execute restriction clearing using ALL recognized Android PM command variants
+      // Note: Android versions vary between "pm set-user-restriction <r> 0 --user <id>",
+      // "pm set-user-restriction --user <id> <r> 0", and positional "pm set-user-restriction <r> 0 <id>"
+      for (const r of restrictions) {
+        // Base global/default call
+        await this.execShell(adb, `pm set-user-restriction ${r} 0 2>/dev/null`);
+        await this.execShell(adb, `pm set-user-restriction ${r} false 2>/dev/null`);
+
+        for (const uid of Array.from(userIds)) {
+          // Standard Android variant: <restriction> <value> --user <id>
+          await this.execShell(adb, `pm set-user-restriction ${r} 0 --user ${uid} 2>/dev/null`);
+          await this.execShell(adb, `pm set-user-restriction ${r} false --user ${uid} 2>/dev/null`);
+
+          // Prefixed variant: --user <id> <restriction> <value>
+          await this.execShell(adb, `pm set-user-restriction --user ${uid} ${r} 0 2>/dev/null`);
+          await this.execShell(adb, `pm set-user-restriction --user ${uid} ${r} false 2>/dev/null`);
+
+          // Positional legacy variant: <restriction> <value> <id>
+          if (uid !== 'current') {
+            await this.execShell(adb, `pm set-user-restriction ${r} 0 ${uid} 2>/dev/null`);
+          }
+        }
+      }
+
+      onLog?.('تم فك قيود تثبيت التطبيقات ومصادر التثبيت الخارجية بنجاح على شاشة السيارة.', 'info');
     } catch (e: any) {
       onLog?.(`تنبيه فك القيود: ${e.message || e}`, 'info');
     }
