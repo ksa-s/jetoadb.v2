@@ -148,6 +148,7 @@ function parseBinaryXml(bytes: Uint8Array, fallbackFileName: string): ApkMetadat
 
     // Chunk header for String Pool (0x001C0001)
     let offset = 8;
+    let nextChunkOffset = 8;
     while (offset < bytes.length) {
       const chunkType = view.getUint32(offset, true);
       const chunkSize = view.getUint32(offset + 4, true);
@@ -180,18 +181,90 @@ function parseBinaryXml(bytes: Uint8Array, fallbackFileName: string): ApkMetadat
             strings.push(new TextDecoder('utf-16le').decode(strBytes));
           }
         }
+        nextChunkOffset = offset + chunkSize;
         break;
       }
       offset += chunkSize;
+      nextChunkOffset = offset;
     }
 
-    // Find package name, permissions, version in extracted strings
-    for (const str of strings) {
-      if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(str) && !packageName) {
-        if (!str.startsWith('android.') && !str.startsWith('com.android.') && !str.startsWith('schemas.android')) {
-          packageName = str;
+    // Find package name from manifest tag directly, or filter string pool
+    let xmlOffset = nextChunkOffset;
+    while (xmlOffset < bytes.length - 28) {
+      const tagChunkType = view.getUint32(xmlOffset, true);
+      const tagChunkSize = view.getUint32(xmlOffset + 4, true);
+      if (tagChunkSize <= 0 || xmlOffset + tagChunkSize > bytes.length) break;
+
+      if (tagChunkType === 0x00100102) {
+        // Start Element chunk
+        const nameIdx = view.getUint32(xmlOffset + 20, true);
+        const tagName = strings[nameIdx];
+
+        if (tagName === 'manifest') {
+          const attrStart = view.getUint16(xmlOffset + 24, true);
+          const attrSize = view.getUint16(xmlOffset + 26, true);
+          const attrCount = view.getUint16(xmlOffset + 28, true);
+
+          for (let a = 0; a < attrCount; a++) {
+            const attrPos = xmlOffset + attrStart + a * attrSize;
+            if (attrPos + 20 > bytes.length) break;
+            const attrNameIdx = view.getUint32(attrPos + 4, true);
+            const rawValIdx = view.getUint32(attrPos + 8, true);
+            const attrName = strings[attrNameIdx];
+
+            if (attrName === 'package' && rawValIdx < strings.length) {
+              const val = strings[rawValIdx];
+              if (val && !val.includes(' ')) {
+                packageName = val;
+              }
+            } else if (attrName === 'versionName' && rawValIdx < strings.length) {
+              versionName = strings[rawValIdx];
+            } else if (attrName === 'versionCode') {
+              versionCode = view.getUint32(attrPos + 16, true) || versionCode;
+            }
+          }
+          if (packageName) break;
         }
       }
+      xmlOffset += tagChunkSize;
+    }
+
+    // Fallback: If manifest tag didn't yield package, extract from string pool carefully
+    const isExcludedClassOrFramework = (str: string): boolean => {
+      const s = str.toLowerCase();
+      if (s.startsWith('android.') || s.startsWith('androidx.') || s.startsWith('com.android.') || s.startsWith('schemas.')) return true;
+      if (s.startsWith('kotlin.') || s.startsWith('java.') || s.startsWith('javax.') || s.startsWith('org.jetbrains.')) return true;
+      if (s.startsWith('com.google.android.material') || s.startsWith('com.google.android.gms.')) return true;
+      // Exclude Java/Android class names (e.g. CoreComponentFactory, MainActivity)
+      if (/componentfactory|activity|provider|receiver|service|application|adapter|helper|fragment/i.test(str)) return true;
+      return false;
+    };
+
+    if (!packageName) {
+      // First try: strictly lowercase package names (standard Android package convention)
+      for (const str of strings) {
+        if (/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(str)) {
+          if (!isExcludedClassOrFramework(str)) {
+            packageName = str;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!packageName) {
+      // Second try: mixed case package names
+      for (const str of strings) {
+        if (/^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$/.test(str)) {
+          if (!isExcludedClassOrFramework(str)) {
+            packageName = str;
+            break;
+          }
+        }
+      }
+    }
+
+    for (const str of strings) {
       if (str.startsWith('android.permission.') || str.includes('permission.')) {
         permissions.push(str.split('.').pop() || str);
       }
@@ -221,7 +294,12 @@ function parseBinaryXml(bytes: Uint8Array, fallbackFileName: string): ApkMetadat
 function extractStringsFromRawManifest(bytes: Uint8Array, fallbackFileName: string): ApkMetadata {
   const text = new TextDecoder('latin1').decode(bytes);
   const pkgMatches: string[] = text.match(/[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+){2,}/g) || [];
-  const validPkgs = pkgMatches.filter((p: string) => !p.startsWith('schemas.') && !p.startsWith('http') && !p.startsWith('com.android.internal'));
+  const validPkgs = pkgMatches.filter((p: string) => {
+    const s = p.toLowerCase();
+    if (s.startsWith('schemas.') || s.startsWith('http') || s.startsWith('com.android.internal') || s.startsWith('androidx.') || s.startsWith('android.')) return false;
+    if (/componentfactory|activity|provider|receiver|service|application/i.test(p)) return false;
+    return true;
+  });
   
   const packageName = validPkgs[0] || fallbackFileName.replace(/\.apk$/i, '');
   const verMatch = text.match(/\b\d+\.\d+(\.\d+)*\b/);

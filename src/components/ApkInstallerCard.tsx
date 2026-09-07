@@ -206,7 +206,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يبدأ بجلسة الحزم المباشرة ثم مسار النظام ثم التخزين)</option>
+              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات والاحتياطي)</option>
+              <option value="jetour_fallback">🛡️ بروتوكول جيتور والأنظمة المحمية (Jetour T2 / r.sh - نفس الموقع الروسي)</option>
               <option value="session">📦 بروتوكول جلسات الحزم المباشرة (Package Session Stream - بدون ملفات وبدون حظر FUSE)</option>
               <option value="modern_car">⚡ بروتوكول مسار النظام المعتمد (/data/local/tmp المباشر)</option>
               <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download)</option>
@@ -216,7 +217,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
 
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ تم إزالة قيود الأذونات والتوافق مع واجهة سيارات Desay SV
+              ✓ تم إزالة قيود الأذونات ودعم تخطي حظر شاشات جيتور T2
             </span>
           </div>
         </div>
@@ -224,7 +225,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
         {/* Informative Helper for Modern Car Protocol */}
         <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-slate-300">
-            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر بروتوكول جلسة الحزم المباشرة بالذاكرة لتجاوز قيود التخزين، ثم ينتقل تلقائياً لمسار النظام /data/local/tmp ثم التخزين.'}
+            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر بروتوكول جلسة الحزم المباشرة بالذاكرة لتجاوز قيود التخزين، ثم مسار النظام والسكريبت الاحتياطي r.sh عند رفض الفيرموير.'}
+            {selectedMethod === 'jetour_fallback' && '🛡️ بروتوكول جيتور والأنظمة المحمية: ينقل الحزمة إلى /data/local/tmp ويشغل برنامج التثبيت الاحتياطي r.sh لتخطي حظر الفيرموير، ثم يصدر أذونات نافذة تنبيه النظام.'}
             {selectedMethod === 'session' && '📦 جلسات الحزم المباشرة: يبث الـ APK مباشرة إلى ذاكرة مدير حزم أندرويد بدون كتابة ملفات وسيطة، ويتجاوز حظر FUSE و SELinux تماماً.'}
             {selectedMethod === 'modern_car' && '⚡ مسار النظام المعتمد: ينقل الحزمة إلى /data/local/tmp ويمنحها تسمية shell_data_file لتجاوز قيود الأمان.'}
             {selectedMethod === 'sdcard' && '💾 مسار التخزين: ينقل الحزمة إلى /sdcard/Download ويقوم بالتثبيت التقليدي.'}
