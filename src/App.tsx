@@ -316,6 +316,23 @@ export default function App() {
     }
   };
 
+  // Open Car File Manager at /sdcard/Download
+  const handleOpenCarFileManager = async () => {
+    if (!adb) {
+      addLog('تنبيه: يجب الاتصال بالجهاز أولاً.', 'warning');
+      return;
+    }
+    addLog('جاري فتح مدير ملفات السيارة (مجلد التحميلات) على شاشة السيارة...', 'info');
+    try {
+      const res = await ApkInstaller.openCarFileManager(adb, (msg, type) => addLog(msg, type));
+      if (res.success) {
+        addLog('تم إرسال أمر فتح مدير الملفات لشاشة السيارة بنجاح! يمكنك الآن النقر على ملف APK لتثبيته فوراً.', 'success');
+      }
+    } catch (err: any) {
+      addLog(`خطأ فتح مدير الملفات: ${err.message || err}`, 'error');
+    }
+  };
+
   // Execute custom shell command
   const handleExecuteShell = async (command: string) => {
     if (!adb) {
@@ -391,6 +408,7 @@ export default function App() {
           onExposeApp={handleExposeApp}
           onExposeAllApps={handleExposeAllApps}
           onUnlockRestrictions={handleUnlockRestrictions}
+          onOpenCarFileManager={handleOpenCarFileManager}
         />
 
         {/* Permissions & Special AppOps Manager */}

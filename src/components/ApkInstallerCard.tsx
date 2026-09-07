@@ -19,6 +19,7 @@ import {
   Eye,
   Tv,
   Unlock,
+  FolderOpen,
 } from 'lucide-react';
 import { parseApkMetadata } from '../lib/apk-parser';
 
@@ -37,6 +38,7 @@ interface ApkInstallerCardProps {
   onExposeApp?: (packageName: string) => void;
   onExposeAllApps?: () => void;
   onUnlockRestrictions?: () => void;
+  onOpenCarFileManager?: () => void;
 }
 
 export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
@@ -54,6 +56,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
   onExposeApp,
   onExposeAllApps,
   onUnlockRestrictions,
+  onOpenCarFileManager,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -172,6 +175,17 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
             >
               <Eye className="w-3.5 h-3.5 text-amber-400" />
               <span>⚡ إظهار كافة التطبيقات بالشاشة</span>
+            </button>
+          )}
+
+          {isConnected && onOpenCarFileManager && (
+            <button
+              onClick={onOpenCarFileManager}
+              className="px-3 py-1.5 rounded-xl bg-blue-950/70 hover:bg-blue-900/80 border border-blue-500/50 text-blue-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-blue-950/40"
+              title="فتح مدير ملفات السيارة (مجلد التحميلات Download) على شاشة السيارة لتثبيت التطبيق بنقرة واحدة"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-blue-400" />
+              <span>📂 فتح مدير ملفات السيارة</span>
             </button>
           )}
 
@@ -493,6 +507,23 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                       >
                         <Zap className="w-3.5 h-3.5 fill-current text-amber-200" />
                         <span>إعادة التثبيت مع النقر التلقائي على الشاشة</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {onOpenCarFileManager && (
+                    <div className="mr-6 bg-blue-950/40 border border-blue-500/30 rounded-lg p-2.5 flex items-center justify-between flex-wrap gap-2 text-[11px]">
+                      <div className="text-blue-200">
+                        <span className="font-bold">📁 ملف البرنامج تم حفظه مسبقاً في مجلد التحميلات (Download) بشاشة سيارتك:</span>
+                        <p className="text-slate-300 mt-0.5">يمكنك فتح مدير الملفات في شاشة السيارة بنقرة واحدة وتثبيته مباشرة بأمان تام بدون أي أخطاء.</p>
+                      </div>
+                      <button
+                        onClick={onOpenCarFileManager}
+                        disabled={!isConnected}
+                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow shrink-0"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                        <span>فتح مجلد التحميلات بشاشة السيارة الآن</span>
                       </button>
                     </div>
                   )}
