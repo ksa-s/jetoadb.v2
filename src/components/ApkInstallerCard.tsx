@@ -234,8 +234,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات مع النقر التلقائي ومراقبة الشاشة)</option>
-              <option value="jetour_fallback">🛡️ بروتوكول مسار النظام الداخلي المستقل + النقر التلقائي (/data/local/tmp - لشاشات جيتور T2 وهافال)</option>
+              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات مع المثبت الاحتياطي لجيتور)</option>
+              <option value="jetour_fallback">🛡️ بروتوكول جيتور T2 والأنظمة المحمية (المثبت الاحتياطي app_process + GtInstall / r.sh)</option>
               <option value="session">📦 بروتوكول جلسات الحزم المباشرة (Package Session Stream - بدون ملفات وبدون حظر FUSE)</option>
               <option value="modern_car">⚡ بروتوكول مسار النظام المعتمد (/data/local/tmp المباشر)</option>
               <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download)</option>
@@ -245,7 +245,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
 
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ تثبيت مستقل تماماً في نفس مسار شاشات جيتور وبدون أي برامج وسيطة
+              ✓ مجهز بآلية المثبت الاحتياطي المتوافقة مع شاشات جيتور T2 و Desay SV
             </span>
           </div>
         </div>
@@ -253,8 +253,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
         {/* Informative Helper for Modern Car Protocol */}
         <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-slate-300">
-            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر بروتوكول جلسة الحزم المباشرة بالذاكرة، ثم مسار النظام الداخلي المستقل /data/local/tmp بمحرك جلسات الحزم وتجاوز الفيرموير.'}
-            {selectedMethod === 'jetour_fallback' && '🛡️ بروتوكول مسار النظام الداخلي: يثبت التطبيقات مباشرة في مسار /data/local/tmp نفسه باستخدام محرك جلسات الحزم الداخلي وبدون الحاجة لأي تطبيق وسيط أو سكريبت قديم.'}
+            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر بروتوكول البث، ثم المثبت الاحتياطي لجيتور T2 (GtInstall / r.sh)، وجلسات الحزم لتجاوز حظر الفيرموير.'}
+            {selectedMethod === 'jetour_fallback' && '🛡️ بروتوكول جيتور T2 المباشر: يستخدم آلية المثبت الاحتياطي المباشرة (app_process + GtInstall) عبر مسار /data/local/tmp لتجاوز حظر الفيرموير وضمان التثبيت بنجاح على الشاشة.'}
             {selectedMethod === 'session' && '📦 جلسات الحزم المباشرة: يبث الـ APK مباشرة إلى ذاكرة مدير حزم أندرويد بدون كتابة ملفات وسيطة، ويتجاوز حظر FUSE و SELinux تماماً.'}
             {selectedMethod === 'modern_car' && '⚡ مسار النظام المعتمد: ينقل الحزمة إلى /data/local/tmp ويمنحها تسمية shell_data_file لتجاوز قيود الأمان.'}
             {selectedMethod === 'sdcard' && '💾 مسار التخزين: ينقل الحزمة إلى /sdcard/Download ويقوم بالتثبيت التقليدي.'}

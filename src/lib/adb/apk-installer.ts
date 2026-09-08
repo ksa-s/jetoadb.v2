@@ -4,6 +4,7 @@ import { WrapReadableStream, TransformStream } from '@yume-chan/stream-extra';
 import { InstallMethod } from '../../types';
 import { parseApkMetadata } from '../apk-parser';
 import { adbManager } from './webusb-manager';
+import { installViaGtHelper, ensureGtHelperOnDevice, runInteractiveShellSession } from './gt-installer-helper';
 
 export interface InstallProgressCallback {
   (progress: number, stage: 'uploading' | 'installing' | 'processing', message?: string): void;
@@ -639,11 +640,11 @@ export class ApkInstaller {
     const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
     const targetPath = `/data/local/tmp/${safeName}`;
 
-    onLog?.('تهيئة مسار التثبيت الداخلي /data/local/tmp بشكل مستقل...', 'info');
+    onLog?.('تهيئة مسار التثبيت الداخلي /data/local/tmp لشاشات جيتور T2...', 'info');
 
-    // 1. Clean up any leftover old third-party scripts (like old r.sh from garage tool)
+    // Clean up any stale temp APKs without deleting helper scripts
     try {
-      await this.execShell(adb, 'rm -f /data/local/tmp/r.sh /data/local/tmp/garagesplit* 2>/dev/null');
+      await this.execShell(adb, 'rm -f /data/local/tmp/app_install.apk /data/local/tmp/*.b64 2>/dev/null');
       await this.execShell(adb, 'mkdir -p /data/local/tmp 2>/dev/null');
       await this.execShell(adb, 'chmod 777 /data/local/tmp 2>/dev/null');
     } catch {}
@@ -767,37 +768,108 @@ export class ApkInstaller {
     let isSuccess = false;
     let lastLog = '';
 
-    // Strategy 1: Staged Package Session Installation directly from /data/local/tmp
-    // Creates a native session inside /data/app where SELinux restrictions do not apply
-    onLog?.('• تجربة [1]: التثبيت المباشر الفوري عبر محرك جلسات الحزم الداخلي (Staged Session)...', 'info');
+    // Strategy 1: Standard stream pipe test (as shown in user's reference log)
+    // > cd /data/local/tmp
+    // > cat "app.apk" | pm install -S 12345
+    onLog?.('• تجربة [1]: التثبيت عبر ممر الحزم المباشر (Pipe Stream)...', 'info');
+    onLog?.('> cd /data/local/tmp', 'info');
+    onLog?.(`> cat "${safeName}" | pm install -S ${size}`, 'info');
     try {
-      const sessionCreateCmd = `pm install-create -r -t -d -S ${size} 2>/dev/null || cmd package install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d --user current -S ${size} 2>/dev/null || pm install-create -r -t -d --user 0 -S ${size} 2>/dev/null`;
-      const createRes = await this.execShell(adb, sessionCreateCmd);
-      const match = createRes.match(/\b\d+\b/);
-      const sessionId = match ? match[0] : '';
-
-      if (sessionId) {
-        onLog?.(`> تم إنشاء جلسة تثبيت رقم [${sessionId}]، جارٍ كتابة حزمة الـ APK...`, 'info');
-        // Write directly from targetPath (no pipe stdin or pipe with dash -)
-        const writeCmd = `pm install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cmd package install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cat "${targetPath}" | pm install-write -S ${size} ${sessionId} base.apk - 2>/dev/null`;
-        await this.execShell(adb, writeCmd);
-
-        onLog?.(`> اعتماد وتثبيت الجلسة [${sessionId}]...`, 'info');
-        const commitRes = await this.execShell(adb, `pm install-commit ${sessionId} 2>&1 || cmd package install-commit ${sessionId} 2>&1`);
-        const trimmed = commitRes.trim();
-        if (trimmed) {
-          lastLog = trimmed;
-          onLog?.(`> استجابة اعتماد الجلسة: ${trimmed}`, 'info');
-        }
-        if (trimmed.toLowerCase().includes('success')) {
-          isSuccess = true;
-        }
+      const directCatRes = await runInteractiveShellSession(
+        adb,
+        ['cd /data/local/tmp', `cat "${safeName}" | pm install -S ${size}`],
+        45000
+      );
+      const catTrimmed = (directCatRes || '').trim();
+      if (catTrimmed) lastLog = catTrimmed;
+      if (catTrimmed.toLowerCase().includes('success')) {
+        isSuccess = true;
+        onLog?.(`استجابة الشاشة: ${catTrimmed}`, 'success');
+      } else {
+        onLog?.(`استجابة التثبيت العادي: ${catTrimmed || '(تم الرفض أو غير مدعوم)'}`, 'info');
       }
-    } catch (eSess: any) {
-      onLog?.(`ملاحظة جلسة الحزم: ${eSess?.message || eSess}`, 'info');
+    } catch (eCat: any) {
+      lastLog = eCat?.message || String(eCat);
     }
 
     // Check if installed after Strategy 1
+    if (!isSuccess) {
+      try {
+        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
+        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
+        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
+          isSuccess = true;
+          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
+        }
+      } catch {}
+    }
+
+    // Strategy 2: Proven Jetour T2 app_process Classpath Helper (GtInstall / r.sh)
+    // This bypasses the firmware adbd filter which rejects lines containing "install"
+    // and executes GtInstall in system context directly, exactly as GarageTool does.
+    if (!isSuccess) {
+      onLog?.('• تجربة [2]: تشغيل المثبت الاحتياطي المباشر لشاشات جيتور (app_process / GtInstall / r.sh)...', 'info');
+      onLog?.('تم رفض التثبيت العادي من برمجية الشاشة. جاري الانتقال للمثبت الاحتياطي المباشر...', 'info');
+      try {
+        const helperRes = await installViaGtHelper(adb, targetPath, onLog);
+        if (helperRes.success) {
+          isSuccess = true;
+          newlyFoundPkg = helperRes.packageName || knownPackageName;
+          onLog?.(`تم التثبيت بنجاح بواسطة المثبت الاحتياطي (${newlyFoundPkg || 'التطبيق'})!`, 'success');
+        } else {
+          lastLog = helperRes.message;
+        }
+      } catch (eHelper: any) {
+        lastLog = eHelper?.message || String(eHelper);
+        onLog?.(`ملاحظة المثبت الاحتياطي: ${lastLog}`, 'info');
+      }
+    }
+
+    // Check if installed after Strategy 2
+    if (!isSuccess) {
+      try {
+        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
+        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
+        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
+          isSuccess = true;
+          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
+        }
+      } catch {}
+    }
+
+    // Strategy 3: Staged Package Session Installation directly from /data/local/tmp
+    // Creates a native session inside /data/app where SELinux restrictions do not apply
+    if (!isSuccess) {
+      onLog?.('• تجربة [3]: التثبيت المباشر الفوري عبر محرك جلسات الحزم الداخلي (Staged Session)...', 'info');
+      try {
+        const sessionCreateCmd = `pm install-create -r -t -d -S ${size} 2>/dev/null || cmd package install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d --user current -S ${size} 2>/dev/null || pm install-create -r -t -d --user 0 -S ${size} 2>/dev/null`;
+        const createRes = await this.execShell(adb, sessionCreateCmd);
+        const match = createRes.match(/\b\d+\b/);
+        const sessionId = match ? match[0] : '';
+
+        if (sessionId) {
+          onLog?.(`> تم إنشاء جلسة تثبيت رقم [${sessionId}]، جارٍ كتابة حزمة الـ APK...`, 'info');
+          // Write directly from targetPath (no pipe stdin or pipe with dash -)
+          const writeCmd = `pm install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cmd package install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cat "${targetPath}" | pm install-write -S ${size} ${sessionId} base.apk - 2>/dev/null`;
+          await this.execShell(adb, writeCmd);
+
+          onLog?.(`> اعتماد وتثبيت الجلسة [${sessionId}]...`, 'info');
+          const commitRes = await this.execShell(adb, `pm install-commit ${sessionId} 2>&1 || cmd package install-commit ${sessionId} 2>&1`);
+          const trimmed = commitRes.trim();
+          if (trimmed) {
+            lastLog = trimmed;
+            onLog?.(`> استجابة اعتماد الجلسة: ${trimmed}`, 'info');
+          }
+          if (trimmed.toLowerCase().includes('success')) {
+            isSuccess = true;
+          }
+        }
+      } catch (eSess: any) {
+        onLog?.(`ملاحظة جلسة الحزم: ${eSess?.message || eSess}`, 'info');
+      }
+    }
+
+    // Check if installed after Strategy 3
     if (!isSuccess) {
       await new Promise((r) => setTimeout(r, 400));
       try {
@@ -810,9 +882,9 @@ export class ApkInstaller {
       } catch {}
     }
 
-    // Strategy 2: Official @yume-chan/android-bin PackageManager Session API
+    // Strategy 4: Official @yume-chan/android-bin PackageManager Session API
     if (!isSuccess) {
-      onLog?.('• تجربة [2]: التثبيت عبر مكتبة مدير الحزم المباشرة (PackageManager API)...', 'info');
+      onLog?.('• تجربة [4]: التثبيت عبر مكتبة مدير الحزم المباشرة (PackageManager API)...', 'info');
       try {
         const pm = new PackageManager(adb);
         const sessId = await pm.sessionCreate({
@@ -831,7 +903,7 @@ export class ApkInstaller {
       }
     }
 
-    // Check if installed after Strategy 2
+    // Check if installed after Strategy 4
     if (!isSuccess) {
       await new Promise((r) => setTimeout(r, 400));
       try {
@@ -844,9 +916,9 @@ export class ApkInstaller {
       } catch {}
     }
 
-    // Strategy 3: Clean Direct Commands WITHOUT -g and WITHOUT -i com.android.vending
+    // Strategy 5: Clean Direct Commands WITHOUT -g and WITHOUT -i com.android.vending
     if (!isSuccess) {
-      onLog?.('• تجربة [3]: أوامر التثبيت المباشرة لشاشات جيتور وهواتف السيارات...', 'info');
+      onLog?.('• تجربة [5]: أوامر التثبيت المباشرة لشاشات جيتور وهواتف السيارات...', 'info');
       const directCommands = [
         `pm install -r -t -d "${targetPath}" 2>&1`,
         `pm install -r "${targetPath}" 2>&1`,
@@ -879,7 +951,7 @@ export class ApkInstaller {
       }
     }
 
-    // Check if installed after Strategy 3
+    // Check if installed after Strategy 5
     if (!isSuccess) {
       await new Promise((r) => setTimeout(r, 400));
       try {
@@ -892,11 +964,11 @@ export class ApkInstaller {
       } catch {}
     }
 
-    // Strategy 4: Native PackageInstaller Component Intent + Automated Confirmation (Zero Manual Intervention)
+    // Strategy 6: Native PackageInstaller Component Intent + Automated Confirmation (Zero Manual Intervention)
     // If the firmware enforces user confirmation dialog, invoke ONLY the PackageInstaller component
     // (Never launch file manager or generic VIEW intents) and auto-confirm via input tap.
     if (!isSuccess) {
-      onLog?.('• تجربة [4]: استدعاء معالج تثبيت الحزم الرسمي مع النقر التلقائي الذكي...', 'info');
+      onLog?.('• تجربة [6]: استدعاء معالج تثبيت الحزم الرسمي مع النقر التلقائي الذكي...', 'info');
       try {
         const launchCommands = [
           `am start -n com.android.packageinstaller/.PackageInstallerActivity -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`,
@@ -1822,10 +1894,23 @@ export class ApkInstaller {
    */
   private static async autoGrantAutomotivePermissions(
     adb: Adb,
-    fileName: string,
+    fileNameOrPkg: string,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<void> {
-    const lower = fileName.toLowerCase();
+    const lower = fileNameOrPkg.toLowerCase();
+
+    // If a clean package name was passed directly (not ending in .apk)
+    if (!fileNameOrPkg.endsWith('.apk') && fileNameOrPkg.includes('.')) {
+      try {
+        await this.execShell(adb, `appops set ${fileNameOrPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fileNameOrPkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fileNameOrPkg} android.permission.ACCESS_FINE_LOCATION 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fileNameOrPkg} android.permission.ACCESS_COARSE_LOCATION 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fileNameOrPkg} android.permission.READ_EXTERNAL_STORAGE 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fileNameOrPkg} android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null`);
+        await this.execShell(adb, `dumpsys deviceidle whitelist +${fileNameOrPkg} 2>/dev/null`);
+      } catch {}
+    }
 
     // App Stores
     if (lower.includes('store') || lower.includes('market') || lower.includes('aurora') || lower.includes('rustore')) {
@@ -1838,6 +1923,20 @@ export class ApkInstaller {
           await this.execShell(adb, `appops set ${p} REQUEST_INSTALL_PACKAGES allow 2>/dev/null`);
           await this.execShell(adb, `appops set ${p} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
           await this.execShell(adb, `dumpsys deviceidle whitelist +${p} 2>/dev/null`);
+        } catch {}
+      }
+    }
+
+    // Radar / HUD / Navigation Apps (like HUD Speed, Strelka, Yandex)
+    if (lower.includes('hud') || lower.includes('speed') || lower.includes('radar') || lower.includes('strelka') || lower.includes('map') || lower.includes('nav')) {
+      onLog?.('اكتشاف تطبيق ملاحة/رادار سرعة: جاري تفعيل صلاحيات النوافذ العائمة والموقع الجغرافي...', 'info');
+      const radarPkgs = ['air.strelkahudfree', 'air.strelkahud', 'ru.speedcamalert', 'com.yandex.yandexnavi', 'com.google.android.apps.maps'];
+      for (const rp of radarPkgs) {
+        try {
+          await this.execShell(adb, `appops set ${rp} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
+          await this.execShell(adb, `pm grant ${rp} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
+          await this.execShell(adb, `pm grant ${rp} android.permission.ACCESS_FINE_LOCATION 2>/dev/null`);
+          await this.execShell(adb, `dumpsys deviceidle whitelist +${rp} 2>/dev/null`);
         } catch {}
       }
     }
