@@ -234,37 +234,33 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات مع سكربتات المطورين والمثبت الاحتياطي)</option>
-              <option value="split_script">📜 بروتوكول سكربت جلسات الحزم الداخلي (adb-install-split-apks.sh - تنصيب محلي عبر wc -c)</option>
-              <option value="user_current">🛡️ بروتوكول المستخدم النشط والنوافذ العائمة (--user current بدون روت - قناة البرمجة)</option>
-              <option value="jetour_fallback">⚡ بروتوكول جيتور والمثبت الاحتياطي المستقل (app_process + GtInstall / r.sh)</option>
-              <option value="jcartools_batch">🔄 بروتوكول jcartools / الدفعة المجمعة (تثبيت دفعة مباشرة -r -t -g)</option>
-              <option value="session">📦 بروتوكول جلسات الحزم المباشرة بالذاكرة (Package Session Stream - بدون ملفات وسيطة)</option>
-              <option value="modern_car">⚡ بروتوكول مسار النظام المعتمد (/data/local/tmp المباشر)</option>
-              <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download)</option>
-              <option value="stream">📡 البث الثنائي المباشر (Direct Binary Stream)</option>
+              <option value="auto">🌟 الوضع الذكي الشامل (يوصى به: يدمج كل البروتوكولات الجديدة لكسر حظر المصنع)</option>
+              <option value="package_installer_ui">🛡️ واجهة مثبت النظام الرسمية مع النقر التلقائي (تجاوز حظر الـ Shell كلياً عبر نافذة الشاشة)</option>
+              <option value="restriction_annihilator">💥 ناسف قيود النظام والمستخدمين (إلغاء DISALLOW_INSTALL_APPS لجميع المعرفات 0 و 10)</option>
+              <option value="spoofed_installer">🎭 جلسة التثبيت بالهوية الموثوقة (انتحال هوية متجر التطبيقات -i com.android.vending)</option>
+              <option value="broadcast_intent">📡 حاقن الأوامر وبث النظام المستهدف (نواقل أوامر Desay SV / Chery / Geely)</option>
+              <option value="car_download_staging">📁 إيداع التحميلات ومدير ملفات السيارة (رفع مباشر إلى Download وتثبيت بنقرة من الشاشة)</option>
+              <option value="root_su_inject">⚡ الحقن المباشر بصلاحيات الروت المخفية (تخطي حماية SELinux وتثبيت كـ Root)</option>
             </select>
           </div>
 
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ مجهز بجميع بروتوكولات شاشات السيارات (جيتور T2، جيلي، هافال، وتشانجان)
+              ✓ بروتوكولات جديدة مخصصة لتجاوز حظر المصنع وفيرموير Desay SV / Jetour T2
             </span>
           </div>
         </div>
 
-        {/* Informative Helper for Modern Car Protocol */}
+        {/* Informative Helper for Selected Protocol */}
         <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-slate-300">
-            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر سكربت جلسات الحزم (split-apks)، ثم مثبت جيتور T2 الاحتياطي (GtInstall / r.sh)، ثم بروتوكول مستخدم الشاشة النشط (--user current)، وجلسات النظام لتجاوز حظر الفيرموير بالكامل.'}
-            {selectedMethod === 'split_script' && '📜 سكربت جلسات الحزم الداخلي: يرفع سكربت adb-install-split-apks.sh للسيارة ليقوم باحتساب الحجم محلياً بـ wc -c وإنشاء الجلسة واعتمادها عبر شيل الشاشة مباشرة.'}
-            {selectedMethod === 'user_current' && '🛡️ بروتوكول مستخدم الشاشة (--user current): مقتبس من قناة برمجة الشاشات لتثبيت التطبيقات بدون روت وتفعيل النوافذ الحرة (Freeform) وصلاحيات المساعد.'}
-            {selectedMethod === 'jetour_fallback' && '⚡ بروتوكول جيتور T2 المباشر: يستخدم آلية المثبت الاحتياطي المستقل (app_process + GtInstall) عبر مسار /data/local/tmp لتجاوز حظر الفيرموير الصارم.'}
-            {selectedMethod === 'jcartools_batch' && '🔄 بروتوكول الدفعة المجمعة (jcartools): تنفيذ أوامر التثبيت المتسلسلة بحلقة تكرار مع منح الصلاحيات الشاملة (-r -t -g).'}
-            {selectedMethod === 'session' && '📦 جلسات الحزم المباشرة: يبث الـ APK مباشرة إلى ذاكرة مدير حزم أندرويد بدون كتابة ملفات وسيطة، ويتجاوز حظر FUSE و SELinux تماماً.'}
-            {selectedMethod === 'modern_car' && '⚡ مسار النظام المعتمد: ينقل الحزمة إلى /data/local/tmp ويمنحها تسمية shell_data_file لتجاوز قيود الأمان.'}
-            {selectedMethod === 'sdcard' && '💾 مسار التخزين: ينقل الحزمة إلى /sdcard/Download ويقوم بالتثبيت التقليدي.'}
-            {selectedMethod === 'stream' && '📡 البث المباشر: يوجه البيانات عبر مقبس البث الثنائي إلى مدخل pm install.'}
+            {selectedMethod === 'auto' && '🌟 الوضع الذكي الشامل: يبدأ بناسف قيود المستخدمين، ثم يطلق واجهة التثبيت الرسمية مع النقر التلقائي، ثم انتحال هوية المتجر وحاقن الأوامر.'}
+            {selectedMethod === 'package_installer_ui' && '🛡️ واجهة مثبت النظام الرسمية: يتجاوز حظر أوامر pm في Shell عبر إطلاق واجهة PackageInstaller الرسمية مع إرسال نقرات آلية فورية على زر التثبيت.'}
+            {selectedMethod === 'restriction_annihilator' && '💥 ناسف قيود النظام: يفحص معرفات المستخدمين (0 للنظام و 10 للمستخدم) ويلغي قيود no_install_apps ومصادر التثبيت الخارجية بالقوة.'}
+            {selectedMethod === 'spoofed_installer' && '🎭 الهوية الموثوقة: ينشئ جلسة تثبيت بهوية متجر Google Play أو مثبت النظام (-i com.android.vending) لتجاوز قائمة الحظر.'}
+            {selectedMethod === 'broadcast_intent' && '📡 حاقن بث النظام: يرسل نداءات بث التثبيت الرسمية المدمجة بفيرموير شاشات Desay SV و Chery و Geely في الخلفية.'}
+            {selectedMethod === 'car_download_staging' && '📁 إيداع التحميلات: يودع التطبيق في مجلد Download بشاشة سيارتك ويفتح مدير الملفات لتثبيته مباشرة بأمان تام.'}
+            {selectedMethod === 'root_su_inject' && '⚡ الحقن المباشر بالروت: يفحص مسارات الروت المخفية (su / xbin) ويحقن التطبيق مباشرة في مسار النظام مع تجاوز SELinux.'}
           </span>
         </div>
       </div>
@@ -388,32 +384,33 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                       </button>
 
                       <button
-                        onClick={() => onInstallSingle(item, 'session')}
-                        disabled={isInstalling || !isConnected}
-                        className="text-[11px] font-semibold text-purple-300 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="التثبيت عبر جلسة الحزم المباشرة (بدون كتابة ملفات)"
-                      >
-                        <Sparkles className="w-3 h-3" />
-                        <span>جلسة الحزم (Session)</span>
-                      </button>
-
-                      <button
-                        onClick={() => onInstallSingle(item, 'modern_car')}
-                        disabled={isInstalling || !isConnected}
-                        className="text-[11px] font-medium text-slate-300 bg-slate-800/80 hover:bg-slate-750 border border-slate-700 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="التثبيت عبر مسار النظام /data/local/tmp"
-                      >
-                        <span>مسار النظام (/tmp)</span>
-                      </button>
-
-                      <button
-                        onClick={() => onInstallSingle(item, 'sdcard')}
+                        onClick={() => onInstallSingle(item, 'package_installer_ui')}
                         disabled={isInstalling || !isConnected}
                         className="text-[11px] font-semibold text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="التثبيت عبر بروتوكول التخزين /sdcard/Download"
+                        title="التثبيت عبر واجهة النظام الرسمية مع النقر التلقائي"
                       >
-                        <RotateCw className="w-3 h-3" />
-                        <span>التخزين (/sdcard)</span>
+                        <ShieldAlert className="w-3 h-3" />
+                        <span>واجهة الشاشة والنقر</span>
+                      </button>
+
+                      <button
+                        onClick={() => onInstallSingle(item, 'restriction_annihilator')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-semibold text-rose-300 bg-rose-950/60 hover:bg-rose-900/60 border border-rose-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="ناسف قيود النظام والمستخدمين (0 و 10)"
+                      >
+                        <Zap className="w-3 h-3" />
+                        <span>ناسف القيود</span>
+                      </button>
+
+                      <button
+                        onClick={() => onInstallSingle(item, 'spoofed_installer')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-semibold text-purple-300 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                        title="جلسة التثبيت بهوية المتجر الموثوقة (-i com.android.vending)"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>الهوية الموثوقة</span>
                       </button>
 
                       {item.packageName && onExposeApp && (
@@ -479,22 +476,21 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                     </div>
                   </div>
 
-                  {(item.errorMessage.toLowerCase().includes('fuse') ||
-                    item.errorMessage.toLowerCase().includes('avc: denied') ||
-                    item.errorMessage.toLowerCase().includes('/data/local/tmp') ||
-                    item.errorMessage.toLowerCase().includes("can't open file") ||
-                    item.errorMessage.toLowerCase().includes('unable to open file')) && (
+                  {(item.errorMessage.toLowerCase().includes('restriction') ||
+                    item.errorMessage.toLowerCase().includes('user restricted') ||
+                    item.errorMessage.includes('قيود') ||
+                    item.errorMessage.includes('أوامر pm')) && (
                     <div className="mr-6 bg-rose-900/40 border border-rose-500/30 rounded-lg p-2 flex items-center justify-between flex-wrap gap-2 text-[11px]">
                       <span className="text-cyan-300 font-medium">
-                        💡 هذا القيد ناتج عن تحديث نظام السيارة (حظر القراءة من /sdcard). البروتوكول الحديث يحل المشكلة كلياً.
+                        💡 تم حظر أمر التثبيت عبر قيود المصنع. بروتوكول واجهة التثبيت الرسمية مع النقر التلقائي يتجاوز هذا القيد تماماً.
                       </span>
                       <button
-                        onClick={() => onInstallSingle(item, 'modern_car')}
+                        onClick={() => onInstallSingle(item, 'package_installer_ui')}
                         disabled={isInstalling || !isConnected}
                         className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Zap className="w-3 h-3 fill-current" />
-                        <span>تثبيت فوري بالبروتوكول الحديث</span>
+                        <span>تثبيت فوري عبر واجهة الشاشة الرسمية</span>
                       </button>
                     </div>
                   )}
@@ -507,7 +503,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                         🚗 نظام جيتور يطلب تأكيد واجهة التثبيت. اضغط هنا لإعادة التثبيت مع النقر التلقائي الفوري على زر (تثبيت) الأخضر ومراقبة الاكتمال.
                       </span>
                       <button
-                        onClick={() => onInstallSingle(item, 'jetour_fallback')}
+                        onClick={() => onInstallSingle(item, 'package_installer_ui')}
                         disabled={isInstalling || !isConnected}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow"
                       >

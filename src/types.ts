@@ -16,15 +16,12 @@ export interface DeviceInfo {
 
 export type InstallMethod = 
   | 'auto' 
-  | 'split_script' 
-  | 'user_current' 
-  | 'jetour_fallback' 
-  | 'jcartools_batch' 
-  | 'modern_car' 
-  | 'session' 
-  | 'sdcard' 
-  | 'stream' 
-  | 'sync_tmp';
+  | 'package_installer_ui' 
+  | 'restriction_annihilator' 
+  | 'spoofed_installer' 
+  | 'car_download_staging' 
+  | 'broadcast_intent' 
+  | 'root_su_inject';
 
 export interface ApkItem {
   id: string;
