@@ -235,6 +235,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
               <option value="auto">🌟 الوضع الذكي الشامل (يوصى به: يدمج كل البروتوكولات الجديدة لكسر حظر المصنع)</option>
+              <option value="jetour_helper">🚀 محرك r.sh و GtInstall المستقل (تقنية garagetool المباشرة لفك حظر المسارات وتثبيت الحزمة)</option>
               <option value="package_installer_ui">🛡️ واجهة مثبت النظام الرسمية مع النقر التلقائي (تجاوز حظر الـ Shell كلياً عبر نافذة الشاشة)</option>
               <option value="restriction_annihilator">💥 ناسف قيود النظام والمستخدمين (إلغاء DISALLOW_INSTALL_APPS لجميع المعرفات 0 و 10)</option>
               <option value="spoofed_installer">🎭 جلسة التثبيت بالهوية الموثوقة (انتحال هوية متجر التطبيقات -i com.android.vending)</option>
@@ -254,7 +255,8 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
         {/* Informative Helper for Selected Protocol */}
         <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-slate-300">
-            {selectedMethod === 'auto' && '🌟 الوضع الذكي الشامل: يبدأ بناسف قيود المستخدمين، ثم يطلق واجهة التثبيت الرسمية مع النقر التلقائي، ثم انتحال هوية المتجر وحاقن الأوامر.'}
+            {selectedMethod === 'auto' && '🌟 الوضع الذكي الشامل: يبدأ بمحرك r.sh المباشر (تقنية garagetool)، ثم واجهة التثبيت الرسمية مع النقر التلقائي، ثم ناسف القيود.'}
+            {selectedMethod === 'jetour_helper' && '🚀 محرك r.sh و GtInstall: ينفذ نفس أسلوب garagetool تماماً، يمرر ملف التثبيت عبر سكريبت داخلي لتجاوز فلترة كلمات ADB، ويفك حظر القيود فورياً.'}
             {selectedMethod === 'package_installer_ui' && '🛡️ واجهة مثبت النظام الرسمية: يتجاوز حظر أوامر pm في Shell عبر إطلاق واجهة PackageInstaller الرسمية مع إرسال نقرات آلية فورية على زر التثبيت.'}
             {selectedMethod === 'restriction_annihilator' && '💥 ناسف قيود النظام: يفحص معرفات المستخدمين (0 للنظام و 10 للمستخدم) ويلغي قيود no_install_apps ومصادر التثبيت الخارجية بالقوة.'}
             {selectedMethod === 'spoofed_installer' && '🎭 الهوية الموثوقة: ينشئ جلسة تثبيت بهوية متجر Google Play أو مثبت النظام (-i com.android.vending) لتجاوز قائمة الحظر.'}

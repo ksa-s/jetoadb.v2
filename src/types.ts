@@ -16,6 +16,7 @@ export interface DeviceInfo {
 
 export type InstallMethod = 
   | 'auto' 
+  | 'jetour_helper'
   | 'package_installer_ui' 
   | 'restriction_annihilator' 
   | 'spoofed_installer' 

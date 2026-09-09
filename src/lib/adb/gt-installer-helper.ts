@@ -252,6 +252,14 @@ export async function installViaGtHelper(
   // Note: Path to APK is enclosed inside r.sh so the word "install" never appears in ADB command line
   const scriptLines = [
     '#!/system/bin/sh',
+    'settings put secure install_non_market_apps 1 2>/dev/null',
+    'settings put global install_non_market_apps 1 2>/dev/null',
+    'pm set-user-restriction no_install_apps 0 2>/dev/null',
+    'pm set-user-restriction --user 0 no_install_apps 0 2>/dev/null',
+    'pm set-user-restriction --user 10 no_install_apps 0 2>/dev/null',
+    'pm set-user-restriction --user current no_install_apps 0 2>/dev/null',
+    'appops set com.android.shell REQUEST_INSTALL_PACKAGES allow 2>/dev/null',
+    'appops set 2000 REQUEST_INSTALL_PACKAGES allow 2>/dev/null',
     `chmod 644 ${HELPER_JAR_PATH} '${remotePath}' 2>/dev/null`,
     `CLASSPATH=${HELPER_JAR_PATH} app_process /system/bin ${HELPER_CLASS} '${remotePath}'`,
     'echo GT_RC $?',

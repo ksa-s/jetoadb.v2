@@ -55,9 +55,27 @@ export class ApkInstaller {
     if (preferredMethod === 'auto') {
       onLog?.('بدء التثبيت عبر الوضع التلقائي الذكي الشامل لتجاوز حظر فيرموير ومصنع السيارة...', 'info');
 
-      // Attempt 1: Official PackageInstaller UI with Automated Screen Touch & Key Injection
+      // Attempt 1: Direct Independent Jetour & Automotive Engine (r.sh / GtInstall / app_process)
+      // Identical to garagetool.online: masks shell command string filter and permanently unlocks system restrictions
       try {
-        onLog?.('[الخطوة 1] تجربة واجهة مثبت النظام الرسمية (PackageInstaller) مع النقر التلقائي الفوري...', 'info');
+        onLog?.('[الخطوة 1] تشغيل محرك r.sh و GtInstall المستقل (نفس تقنية garagetool المباشرة لفك الحظر)...', 'info');
+        const jtRes = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
+        if (jtRes.success) {
+          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, jtRes.packageName || effectivePackageName);
+          const finalPkg = newlyInstalled || jtRes.packageName || effectivePackageName;
+          if (finalPkg) {
+            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
+            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
+          }
+          return { success: true, message: jtRes.message, methodUsed: 'auto', packageName: finalPkg };
+        }
+      } catch (eJt: any) {
+        onLog?.(`تنبيه محرك r.sh: ${eJt.message || eJt}. جاري الانتقال لواجهة مثبت النظام...`, 'info');
+      }
+
+      // Attempt 2: Official PackageInstaller UI with Automated Screen Touch & Key Injection
+      try {
+        onLog?.('[الخطوة 2] تجربة واجهة مثبت النظام الرسمية (PackageInstaller) مع النقر التلقائي الفوري...', 'info');
         const uiRes = await this.installViaPackageInstallerUI(adb, file, onProgress, onLog, effectivePackageName);
         if (uiRes.success) {
           const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, uiRes.packageName || effectivePackageName);
@@ -72,7 +90,7 @@ export class ApkInstaller {
         onLog?.(`تنبيه واجهة مثبت النظام: ${eUi.message || eUi}. جاري الانتقال لناسف قيود النظام...`, 'info');
       }
 
-      // Attempt 2: Multi-User & System Restriction Annihilator
+      // Attempt 3: Multi-User & System Restriction Annihilator
       try {
         onLog?.('[الخطوة 2] تجربة ناسف قيود النظام والمستخدمين المتعددين (Restriction Annihilator)...', 'info');
         const annRes = await this.installViaRestrictionAnnihilator(adb, file, onProgress, onLog, effectivePackageName);
@@ -157,6 +175,22 @@ export class ApkInstaller {
         methodUsed: 'auto',
         packageName: effectivePackageName,
       };
+    }
+
+    // Explicit Method: jetour_helper (r.sh / GtInstall / app_process - Proven Garagetool engine)
+    if (preferredMethod === 'jetour_helper') {
+      onLog?.('🚀 بدء التثبيت عبر محرك r.sh و GtInstall المستقل (نفس تقنية garagetool المباشرة لفك الحظر)...', 'info');
+      const res = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
+      if (res.success) {
+        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
+        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
+        if (finalPkg) {
+          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
+          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
+        }
+        return { ...res, methodUsed: 'jetour_helper', packageName: finalPkg };
+      }
+      return { ...res, methodUsed: 'jetour_helper', packageName: effectivePackageName };
     }
 
     // Explicit Method: package_installer_ui
