@@ -2484,7 +2484,23 @@ export class ApkInstaller {
         }
       }
 
-      onLog?.('تم فك قيود تثبيت التطبيقات ومصادر التثبيت الخارجية بنجاح على شاشة السيارة.', 'info');
+      // Grant unknown sources / install permissions to common file managers if present
+      const fileManagerPkgs = [
+        'com.cxinventor.file.explorer',
+        'com.alphainventor.filemanager',
+        'com.estrongs.android.pop',
+        'com.ghisler.android.TotalCommander',
+        'com.android.documentsui',
+        'com.google.android.documentsui',
+      ];
+      for (const fm of fileManagerPkgs) {
+        await this.execShell(adb, `appops set ${fm} REQUEST_INSTALL_PACKAGES allow 2>/dev/null`);
+        await this.execShell(adb, `appops set ${fm} MANAGE_EXTERNAL_STORAGE allow 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fm} android.permission.READ_EXTERNAL_STORAGE 2>/dev/null`);
+        await this.execShell(adb, `pm grant ${fm} android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null`);
+      }
+
+      onLog?.('تم فك قيود تثبيت التطبيقات ومصادر التثبيت الخارجية وتفعيل أذونات مديري الملفات بنجاح.', 'info');
     } catch (e: any) {
       onLog?.(`تنبيه فك القيود: ${e.message || e}`, 'info');
     }

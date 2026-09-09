@@ -9,6 +9,7 @@ import { ApkInstallerCard } from './components/ApkInstallerCard';
 import { PermissionsCard } from './components/PermissionsCard';
 import { ShellCard } from './components/ShellCard';
 import { LogTerminal } from './components/LogTerminal';
+import { DirectAppsCatalogCard } from './components/DirectAppsCatalogCard';
 import { CarToolsModal } from './components/CarToolsModal';
 import { AppManagerModal } from './components/AppManagerModal';
 import { PermissionsModal } from './components/PermissionsModal';
@@ -390,6 +391,23 @@ export default function App() {
           isConnecting={isConnecting}
           onConnect={handleConnect}
           isWebUsbSupported={isWebUsbSupported}
+        />
+
+        {/* Direct Apps Catalog (YouTube Vanced, MicroG, SmartTube, Cx File Explorer) */}
+        <DirectAppsCatalogCard
+          adb={adb}
+          isConnected={isConnected}
+          installedApps={installedApps}
+          onLog={addLog}
+          onRefreshInstalledApps={async () => {
+            if (adb) {
+              try {
+                const apps = await CarSystemTools.getInstalledApps(adb, false);
+                setInstalledApps(apps);
+              } catch {}
+            }
+          }}
+          onLaunchApp={handleLaunchApp}
         />
 
         {/* APK Batch Installer Card */}
