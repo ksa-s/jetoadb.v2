@@ -10,7 +10,12 @@ import {
   Check, 
   Loader2, 
   AlertTriangle,
-  Download
+  Download,
+  Wifi,
+  Layers,
+  ShieldCheck,
+  Cpu,
+  Sparkles
 } from 'lucide-react';
 import { Adb } from '@yume-chan/adb';
 import { CarSystemTools } from '../lib/adb/car-system-tools';
@@ -33,6 +38,7 @@ export const CarToolsModal: React.FC<CarToolsModalProps> = ({
   const [sizeInput, setSizeInput] = useState('1920x1080');
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [cpuInfo, setCpuInfo] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -47,6 +53,73 @@ export const CarToolsModal: React.FC<CarToolsModalProps> = ({
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (e: any) {
       onLog(`فشل فك القيود: ${e.message || e}`, 'error');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleRestoreHelper = async () => {
+    if (!adb) return;
+    setLoadingAction('restore-helper');
+    try {
+      onLog('جاري إصلاح وتفعيل صلاحيات المساعد الخفي (Garage Tool / GSplit)...', 'info');
+      const logs = await CarSystemTools.restoreCarCompanionHelper(adb);
+      logs.forEach((log) => onLog(log, 'info'));
+      onLog('تم تفعيل كافة صلاحيات المساعد الخفي والنوافذ وإمكانية الوصول بنجاح!', 'success');
+      setActionSuccess('تم تفعيل وتجهيز صلاحيات المساعد الخفي والنوافذ العائمة');
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (e: any) {
+      onLog(`خطأ أثناء استعادة المساعد: ${e.message || e}`, 'error');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleEnableFreeform = async () => {
+    if (!adb) return;
+    setLoadingAction('freeform');
+    try {
+      const logs = await CarSystemTools.enableFreeformMultiWindow(adb);
+      logs.forEach((log) => onLog(log, 'info'));
+      onLog('تم تفعيل دعم النوافذ الحرة وتقسيم شاشة السيارة بنجاح!', 'success');
+      setActionSuccess('تم تفعيل دعم تقسيم الشاشة والنوافذ الحرة (Freeform)');
+      setTimeout(() => setActionSuccess(null), 4000);
+    } catch (e: any) {
+      onLog(`فشل تفعيل النوافذ الحرة: ${e.message || e}`, 'error');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleEnableWirelessAdb = async () => {
+    if (!adb) return;
+    setLoadingAction('wireless-adb');
+    try {
+      onLog('جاري تفعيل ADB اللاسلكي على المنفذ 5555...', 'info');
+      const res = await CarSystemTools.enableWirelessAdb(adb);
+      onLog(res.message, res.success ? 'success' : 'error');
+      if (res.success) {
+        setActionSuccess(res.message);
+        setTimeout(() => setActionSuccess(null), 6000);
+      }
+    } catch (e: any) {
+      onLog(`خطأ تفعيل التصحيح اللاسلكي: ${e.message || e}`, 'error');
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const handleGetCpuAbi = async () => {
+    if (!adb) return;
+    setLoadingAction('cpu-abi');
+    try {
+      const info = await CarSystemTools.getCpuArchitectureInfo(adb);
+      setCpuInfo(info);
+      onLog(info, 'info');
+      setActionSuccess(info);
+      setTimeout(() => setActionSuccess(null), 6000);
+    } catch (e: any) {
+      onLog(`فشل قراءة المعمارية: ${e.message || e}`, 'error');
     } finally {
       setLoadingAction(null);
     }
@@ -171,6 +244,78 @@ export const CarToolsModal: React.FC<CarToolsModalProps> = ({
                 <span>تطبيق الفك الآن</span>
               </button>
             </div>
+          </div>
+
+          {/* Section: Hidden Car Helper & Accessibility Companion Hub */}
+          <div className="bg-gradient-to-r from-amber-950/30 to-slate-950/70 border border-amber-500/30 rounded-xl p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h4 className="font-bold text-sm text-amber-300 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-amber-400" />
+                  إصلاح وتفعيل صلاحيات المساعد الخفي (Garage Tool / GSplit Helper)
+                </h4>
+                <p className="text-slate-300 text-xs mt-1 leading-relaxed">
+                  عند حذف برنامج المساعد من شاشة السيارة (مثل GarageTool Helper أو GSplit)، تفقد الشاشة خدمات إمكانية الوصول والتثبيت الصامت. يقوم هذا الإجراء بإعادة تهيئة تصاريح النظام وإعدادات النوافذ العائمة (SYSTEM_ALERT_WINDOW و Accessibility Service) لحساب المستخدم الحالي.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                onClick={handleRestoreHelper}
+                disabled={loadingAction !== null || !adb}
+                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {loadingAction === 'restore-helper' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                <span>إصلاح وتفعيل صلاحيات المساعد الخفي</span>
+              </button>
+
+              <button
+                onClick={handleEnableFreeform}
+                disabled={loadingAction !== null || !adb}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {loadingAction === 'freeform' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Layers className="w-3.5 h-3.5 text-cyan-400" />}
+                <span>تفعيل النوافذ العائمة وتقسيم الشاشة (Freeform)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Section: Developer & Connectivity Tools */}
+          <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+            <h4 className="font-bold text-sm text-slate-100 flex items-center gap-2">
+              <Wifi className="w-4 h-4 text-purple-400" />
+              أدوات الاتصال اللاسلكي ومعمارية النظام (Wireless ADB & Architecture)
+            </h4>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              تفعيل الاتصال اللاسلكي للشاشة عبر شبكة Wi-Fi الداخلية بدون كابل USB، وفحص معمارية المعالج (ARM64 / ARMv7) لدعم أدوات المطورين مثل Frida و scrcpy.
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                onClick={handleEnableWirelessAdb}
+                disabled={loadingAction !== null || !adb}
+                className="px-3.5 py-2 rounded-xl bg-purple-950/60 hover:bg-purple-900/80 border border-purple-600/40 text-purple-200 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {loadingAction === 'wireless-adb' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5 text-purple-400" />}
+                <span>تفعيل التصحيح اللاسلكي (TCP 5555)</span>
+              </button>
+
+              <button
+                onClick={handleGetCpuAbi}
+                disabled={loadingAction !== null || !adb}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                {loadingAction === 'cpu-abi' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5 text-emerald-400" />}
+                <span>فحص معمارية المعالج (CPU ABI)</span>
+              </button>
+            </div>
+
+            {cpuInfo && (
+              <div className="mt-2 p-2.5 bg-slate-900 rounded-lg border border-slate-800 font-mono text-[11px] text-emerald-300">
+                {cpuInfo}
+              </div>
+            )}
           </div>
 
           {/* Section 2: Screen DPI / Density */}

@@ -234,9 +234,12 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
               onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
               className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
             >
-              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات مع المثبت الاحتياطي لجيتور)</option>
-              <option value="jetour_fallback">🛡️ بروتوكول جيتور T2 والأنظمة المحمية (المثبت الاحتياطي app_process + GtInstall / r.sh)</option>
-              <option value="session">📦 بروتوكول جلسات الحزم المباشرة (Package Session Stream - بدون ملفات وبدون حظر FUSE)</option>
+              <option value="auto">🌟 الوضع التلقائي الذكي الشامل (يوصى به: يدمج كافة البروتوكولات مع سكربتات المطورين والمثبت الاحتياطي)</option>
+              <option value="split_script">📜 بروتوكول سكربت جلسات الحزم الداخلي (adb-install-split-apks.sh - تنصيب محلي عبر wc -c)</option>
+              <option value="user_current">🛡️ بروتوكول المستخدم النشط والنوافذ العائمة (--user current بدون روت - قناة البرمجة)</option>
+              <option value="jetour_fallback">⚡ بروتوكول جيتور والمثبت الاحتياطي المستقل (app_process + GtInstall / r.sh)</option>
+              <option value="jcartools_batch">🔄 بروتوكول jcartools / الدفعة المجمعة (تثبيت دفعة مباشرة -r -t -g)</option>
+              <option value="session">📦 بروتوكول جلسات الحزم المباشرة بالذاكرة (Package Session Stream - بدون ملفات وسيطة)</option>
               <option value="modern_car">⚡ بروتوكول مسار النظام المعتمد (/data/local/tmp المباشر)</option>
               <option value="sdcard">💾 بروتوكول التخزين الكلاسيكي (/sdcard/Download)</option>
               <option value="stream">📡 البث الثنائي المباشر (Direct Binary Stream)</option>
@@ -245,7 +248,7 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
 
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ مجهز بآلية المثبت الاحتياطي المتوافقة مع شاشات جيتور T2 و Desay SV
+              ✓ مجهز بجميع بروتوكولات شاشات السيارات (جيتور T2، جيلي، هافال، وتشانجان)
             </span>
           </div>
         </div>
@@ -253,8 +256,11 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
         {/* Informative Helper for Modern Car Protocol */}
         <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-slate-300">
-            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر بروتوكول البث، ثم المثبت الاحتياطي لجيتور T2 (GtInstall / r.sh)، وجلسات الحزم لتجاوز حظر الفيرموير.'}
-            {selectedMethod === 'jetour_fallback' && '🛡️ بروتوكول جيتور T2 المباشر: يستخدم آلية المثبت الاحتياطي المباشرة (app_process + GtInstall) عبر مسار /data/local/tmp لتجاوز حظر الفيرموير وضمان التثبيت بنجاح على الشاشة.'}
+            {selectedMethod === 'auto' && '🌟 الوضع الذكي: يختبر سكربت جلسات الحزم (split-apks)، ثم مثبت جيتور T2 الاحتياطي (GtInstall / r.sh)، ثم بروتوكول مستخدم الشاشة النشط (--user current)، وجلسات النظام لتجاوز حظر الفيرموير بالكامل.'}
+            {selectedMethod === 'split_script' && '📜 سكربت جلسات الحزم الداخلي: يرفع سكربت adb-install-split-apks.sh للسيارة ليقوم باحتساب الحجم محلياً بـ wc -c وإنشاء الجلسة واعتمادها عبر شيل الشاشة مباشرة.'}
+            {selectedMethod === 'user_current' && '🛡️ بروتوكول مستخدم الشاشة (--user current): مقتبس من قناة برمجة الشاشات لتثبيت التطبيقات بدون روت وتفعيل النوافذ الحرة (Freeform) وصلاحيات المساعد.'}
+            {selectedMethod === 'jetour_fallback' && '⚡ بروتوكول جيتور T2 المباشر: يستخدم آلية المثبت الاحتياطي المستقل (app_process + GtInstall) عبر مسار /data/local/tmp لتجاوز حظر الفيرموير الصارم.'}
+            {selectedMethod === 'jcartools_batch' && '🔄 بروتوكول الدفعة المجمعة (jcartools): تنفيذ أوامر التثبيت المتسلسلة بحلقة تكرار مع منح الصلاحيات الشاملة (-r -t -g).'}
             {selectedMethod === 'session' && '📦 جلسات الحزم المباشرة: يبث الـ APK مباشرة إلى ذاكرة مدير حزم أندرويد بدون كتابة ملفات وسيطة، ويتجاوز حظر FUSE و SELinux تماماً.'}
             {selectedMethod === 'modern_car' && '⚡ مسار النظام المعتمد: ينقل الحزمة إلى /data/local/tmp ويمنحها تسمية shell_data_file لتجاوز قيود الأمان.'}
             {selectedMethod === 'sdcard' && '💾 مسار التخزين: ينقل الحزمة إلى /sdcard/Download ويقوم بالتثبيت التقليدي.'}

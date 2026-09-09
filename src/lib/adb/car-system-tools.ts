@@ -787,6 +787,95 @@ export class CarSystemTools {
     }
   }
 
+  /**
+   * Enables Android Freeform window support and multi-window resizing for car head units (From Russian firmware guide)
+   */
+  public static async enableFreeformMultiWindow(adb: Adb): Promise<string[]> {
+    const results: string[] = [];
+    try {
+      await this.exec(adb, 'settings put global enable_freeform_support 1');
+      await this.exec(adb, 'settings put global force_resizable_activities 1');
+      results.push('تم تفعيل دعم النوافذ العائمة وتقسيم الشاشة الحرة (enable_freeform_support=1)');
+      results.push('تم إجبار التطبيقات على التجاوب مع تقسيم الشاشة (force_resizable_activities=1)');
+    } catch (e: any) {
+      results.push(`خطأ أثناء تفعيل النوافذ الحرة: ${e.message || e}`);
+    }
+    return results;
+  }
+
+  /**
+   * Activates Wireless ADB on port 5555 for cable-free connections
+   */
+  public static async enableWirelessAdb(adb: Adb): Promise<{ success: boolean; message: string; ip?: string }> {
+    try {
+      await this.exec(adb, 'setprop service.adb.tcp.port 5555');
+      await this.exec(adb, 'adb tcpip 5555 2>/dev/null');
+
+      // Fetch IP
+      const ipOut = await this.exec(adb, 'ip -f inet addr show wlan0 2>/dev/null || ifconfig wlan0 2>/dev/null');
+      const match = ipOut.match(/inet\s+(\d+\.\d+\.\d+\.\d+)/);
+      const ip = match ? match[1] : '';
+
+      return {
+        success: true,
+        message: ip 
+          ? `تم تفعيل ADB اللاسلكي على المنفذ 5555! عنوان IP الشاشة: ${ip}:5555` 
+          : 'تم تفعيل وضع تصحيح ADB اللاسلكي على المنفذ 5555 بنجاح.',
+        ip,
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        message: `تعذر تفعيل ADB اللاسلكي: ${e.message || e}`,
+      };
+    }
+  }
+
+  /**
+   * Retrieves CPU ABI for tools like Frida and binary helpers
+   */
+  public static async getCpuArchitectureInfo(adb: Adb): Promise<string> {
+    const abi = await this.exec(adb, 'getprop ro.product.cpu.abi');
+    const abiList = await this.exec(adb, 'getprop ro.product.cpu.abilist');
+    return `معمارية المعالج الأساسية: ${abi.trim() || 'غير معروف'} ${abiList.trim() ? `(القائمة: ${abiList.trim()})` : ''}`;
+  }
+
+  /**
+   * Restores and configures Car Companion Helper (GSplit, GarageTool Helper) permissions
+   */
+  public static async restoreCarCompanionHelper(adb: Adb): Promise<string[]> {
+    const logs: string[] = [];
+    const helperPkgs = ['com.salat.gsplit', 'com.garagetool.helper', 'com.garagetool.installer', 'com.car.helper'];
+
+    try {
+      // 1. System wide sideload & freeform flags
+      await this.exec(adb, 'settings put global enable_freeform_support 1');
+      await this.exec(adb, 'settings put global force_resizable_activities 1');
+      await this.exec(adb, 'settings put secure install_non_market_apps 1');
+      await this.exec(adb, 'settings put global install_non_market_apps 1');
+      await this.exec(adb, 'settings put global verifier_verify_adb_installs 0');
+      await this.exec(adb, 'settings put global package_verifier_enable 0');
+      logs.push('✓ تم ضبط إعدادات النظام لفتح التثبيت وتجاوز فاحص الحزم');
+
+      // 2. Grant helper permissions across all potential helper packages
+      for (const pkg of helperPkgs) {
+        try {
+          await this.exec(adb, `pm grant ${pkg} android.permission.BIND_NOTIFICATION_LISTENER_SERVICE 2>/dev/null`);
+          await this.exec(adb, `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS 2>/dev/null`);
+          await this.exec(adb, `pm grant ${pkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
+          await this.exec(adb, `pm grant ${pkg} android.permission.WRITE_SETTINGS 2>/dev/null`);
+          await this.exec(adb, `settings put secure enabled_accessibility_services ${pkg}/${pkg}.BootAccessibilityService 2>/dev/null`);
+        } catch {}
+      }
+      logs.push('✓ تم تفعيل صلاحيات النوافذ العائمة (SYSTEM_ALERT_WINDOW) والإعدادات الآمنة لبرمجيات المساعد');
+      logs.push('✓ تم تهيئة خدمات إمكانية الوصول وتسهيل الاستخدام (Accessibility Services)');
+    } catch (e: any) {
+      logs.push(`تنبيه أثناء تهيئة المساعد: ${e.message || e}`);
+    }
+
+    return logs;
+  }
+
   private static async exec(adb: Adb, command: string): Promise<string> {
     try {
       return await adbManager.execShell(adb, command);

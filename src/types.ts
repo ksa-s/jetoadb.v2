@@ -14,7 +14,17 @@ export interface DeviceInfo {
   ipAddress?: string;
 }
 
-export type InstallMethod = 'auto' | 'jetour_fallback' | 'modern_car' | 'stream' | 'session' | 'sdcard' | 'sync_tmp';
+export type InstallMethod = 
+  | 'auto' 
+  | 'split_script' 
+  | 'user_current' 
+  | 'jetour_fallback' 
+  | 'jcartools_batch' 
+  | 'modern_car' 
+  | 'session' 
+  | 'sdcard' 
+  | 'stream' 
+  | 'sync_tmp';
 
 export interface ApkItem {
   id: string;
