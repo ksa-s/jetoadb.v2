@@ -2435,6 +2435,9 @@ export class ApkInstaller {
       await this.execShell(adb, 'settings put global install_non_market_apps 1 2>/dev/null');
       await this.execShell(adb, 'settings put secure install_non_market_apps 1 2>/dev/null');
       await this.execShell(adb, 'settings put system install_non_market_apps 1 2>/dev/null');
+      await this.execShell(adb, 'settings put global block_untrusted_touches 0 2>/dev/null');
+      await this.execShell(adb, 'appops set com.android.shell REQUEST_INSTALL_PACKAGES allow 2>/dev/null');
+      await this.execShell(adb, 'appops set 2000 REQUEST_INSTALL_PACKAGES allow 2>/dev/null');
 
       // 3. User restrictions that block app installation or unknown sources
       const restrictions = [
