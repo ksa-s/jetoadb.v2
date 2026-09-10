@@ -50,114 +50,69 @@ export class ApkInstaller {
       await this.unlockUserRestrictions(adb, currentUserId, onLog);
     } catch {}
 
-    // Method: Auto Adaptive (Default & Recommended for All Automotive Units)
-    // Runs an intelligent multi-stage cascade across all new vehicle protocols.
+    // Use Android's PackageInstaller session for the supported Jetour path.
+    // The head unit remains responsible for applying its own policy and confirmation.
+    if (preferredMethod === 'jetour_official') {
+      onLog?.('بدء التثبيت عبر جلسة Jetour الرسمية المعتمدة من PackageInstaller...', 'info');
+      try {
+        const officialRes = await this.installViaPackageSessionStream(
+          adb,
+          file,
+          onProgress,
+          onLog,
+          effectivePackageName
+        );
+        if (officialRes.success) {
+          const newlyInstalled = await this.detectNewlyInstalledPackage(
+            adb,
+            beforePackages,
+            officialRes.packageName || effectivePackageName
+          );
+          const finalPkg = newlyInstalled || officialRes.packageName || effectivePackageName;
+          return { ...officialRes, methodUsed: 'jetour_official', packageName: finalPkg };
+        }
+        return { ...officialRes, methodUsed: 'jetour_official', packageName: effectivePackageName };
+      } catch (error: any) {
+        const message = error?.message || String(error);
+        onLog?.(`رفضت شاشة السيارة جلسة التثبيت الرسمية: ${message}`, 'warning');
+        return {
+          success: false,
+          message: `لم تسمح شاشة السيارة بالتثبيت الرسمي. وافق على الطلب من الشاشة أو استخدم حزمة معتمدة من Jetour. التفاصيل: ${message}`,
+          methodUsed: 'jetour_official',
+          packageName: effectivePackageName,
+        };
+      }
+    }
+
+    // Method: Auto Adaptive. Only use supported, user-confirmed installation paths.
     if (preferredMethod === 'auto') {
-      onLog?.('بدء التثبيت عبر الوضع التلقائي الذكي الشامل لتجاوز حظر فيرموير ومصنع السيارة...', 'info');
+      onLog?.('بدء التثبيت عبر المسار الرسمي المدعوم من Jetour...', 'info');
 
-      // Attempt 1: Direct Independent Jetour & Automotive Engine (r.sh / GtInstall / app_process)
-      // Identical to garagetool.online: masks shell command string filter and permanently unlocks system restrictions
+      // First attempt: official PackageInstaller session.
       try {
-        onLog?.('[الخطوة 1] تشغيل محرك r.sh و GtInstall المستقل (نفس تقنية garagetool المباشرة لفك الحظر)...', 'info');
-        const jtRes = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
-        if (jtRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, jtRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || jtRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: jtRes.message, methodUsed: 'auto', packageName: finalPkg };
+        const officialRes = await this.installViaPackageSessionStream(
+          adb,
+          file,
+          onProgress,
+          onLog,
+          effectivePackageName
+        );
+        if (officialRes.success) {
+          const newlyInstalled = await this.detectNewlyInstalledPackage(
+            adb,
+            beforePackages,
+            officialRes.packageName || effectivePackageName
+          );
+          const finalPkg = newlyInstalled || officialRes.packageName || effectivePackageName;
+          return { ...officialRes, methodUsed: 'auto', packageName: finalPkg };
         }
-      } catch (eJt: any) {
-        onLog?.(`تنبيه محرك r.sh: ${eJt.message || eJt}. جاري الانتقال لواجهة مثبت النظام...`, 'info');
+        onLog?.(`لم تكتمل جلسة Jetour الرسمية: ${officialRes.message}`, 'warning');
+      } catch (error: any) {
+        onLog?.(`تعذر فتح جلسة Jetour الرسمية: ${error?.message || error}`, 'warning');
       }
 
-      // Attempt 2: Official PackageInstaller UI with Automated Screen Touch & Key Injection
-      try {
-        onLog?.('[الخطوة 2] تجربة واجهة مثبت النظام الرسمية (PackageInstaller) مع النقر التلقائي الفوري...', 'info');
-        const uiRes = await this.installViaPackageInstallerUI(adb, file, onProgress, onLog, effectivePackageName);
-        if (uiRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, uiRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || uiRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: uiRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eUi: any) {
-        onLog?.(`تنبيه واجهة مثبت النظام: ${eUi.message || eUi}. جاري الانتقال لناسف قيود النظام...`, 'info');
-      }
-
-      // Attempt 3: Multi-User & System Restriction Annihilator
-      try {
-        onLog?.('[الخطوة 2] تجربة ناسف قيود النظام والمستخدمين المتعددين (Restriction Annihilator)...', 'info');
-        const annRes = await this.installViaRestrictionAnnihilator(adb, file, onProgress, onLog, effectivePackageName);
-        if (annRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, annRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || annRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: annRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eAnn: any) {
-        onLog?.(`تنبيه ناسف القيود: ${eAnn.message || eAnn}. جاري الانتقال لجلسة الهوية الموثوقة...`, 'info');
-      }
-
-      // Attempt 3: Spoofed Installer Identity Session (-i com.android.vending)
-      try {
-        onLog?.('[الخطوة 3] تجربة جلسة التثبيت بالهوية الموثوقة (Spoofed Installer Session)...', 'info');
-        const spoofRes = await this.installViaSpoofedInstaller(adb, file, onProgress, onLog, effectivePackageName);
-        if (spoofRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, spoofRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || spoofRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: spoofRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eSpoof: any) {
-        onLog?.(`تنبيه جلسة الهوية: ${eSpoof.message || eSpoof}. جاري الانتقال لحاقن بث النظام...`, 'info');
-      }
-
-      // Attempt 4: Automotive OEM Broadcast Intent Injector
-      try {
-        onLog?.('[الخطوة 4] تجربة حاقن الأوامر وبث النظام المستهدف (Broadcast Intent)...', 'info');
-        const bcastRes = await this.installViaBroadcastIntent(adb, file, onProgress, onLog, effectivePackageName);
-        if (bcastRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, bcastRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || bcastRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: bcastRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eBcast: any) {
-        onLog?.(`تنبيه حاقن البث: ${eBcast.message || eBcast}. جاري فحص الروت المباشر...`, 'info');
-      }
-
-      // Attempt 5: Root / SU Privilege Injector
-      try {
-        onLog?.('[الخطوة 5] فحص وحقن صلاحيات الروت المباشرة (Root SU Injection)...', 'info');
-        const rootRes = await this.installViaRootSuInject(adb, file, onProgress, onLog, effectivePackageName);
-        if (rootRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, rootRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || rootRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: rootRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch {}
-
-      // Attempt 6: Car Download Folder Staging & Car File Manager
-      onLog?.('[الخطوة 6] إيداع الحزمة في مجلد التحميلات بشاشة السيارة (Download Folder Staging)...', 'info');
+      // Second attempt: stage the APK for the driver to approve in the car UI.
+      onLog?.('إيداع الحزمة في Download لفتح مثبت Jetour أمام المستخدم...', 'info');
       const stageRes = await this.installViaCarDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
       if (stageRes.success) {
         const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, stageRes.packageName || effectivePackageName);
@@ -171,127 +126,25 @@ export class ApkInstaller {
 
       return {
         success: false,
-        message: stageRes.message,
+        message: `لم يكتمل التثبيت الرسمي: ${stageRes.message}`,
         methodUsed: 'auto',
         packageName: effectivePackageName,
       };
     }
 
-    // Explicit Method: jetour_helper (r.sh / GtInstall / app_process - Proven Garagetool engine)
-    if (preferredMethod === 'jetour_helper') {
-      onLog?.('🚀 بدء التثبيت عبر محرك r.sh و GtInstall المستقل (نفس تقنية garagetool المباشرة لفك الحظر)...', 'info');
-      const res = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'jetour_helper', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'jetour_helper', packageName: effectivePackageName };
+    const requestedMethod: string = preferredMethod;
+    if (requestedMethod !== 'car_download_staging') {
+      return {
+        success: false,
+        message: 'طريقة التثبيت المطلوبة غير مدعومة. استخدم مثبت Jetour الرسمي أو مجلد Download مع موافقة المستخدم.',
+        methodUsed: preferredMethod,
+        packageName: effectivePackageName,
+      };
     }
 
-    // Explicit Method: package_installer_ui
-    if (preferredMethod === 'package_installer_ui') {
-      onLog?.('🛡️ بدء التثبيت عبر واجهة مثبت النظام الرسمية مع النقر التلقائي...', 'info');
-      const res = await this.installViaPackageInstallerUI(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'package_installer_ui', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'package_installer_ui', packageName: effectivePackageName };
-    }
-
-    // Explicit Method: restriction_annihilator
-    if (preferredMethod === 'restriction_annihilator') {
-      onLog?.('💥 بدء التثبيت عبر ناسف قيود النظام والمستخدمين المتعددين...', 'info');
-      const res = await this.installViaRestrictionAnnihilator(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'restriction_annihilator', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'restriction_annihilator', packageName: effectivePackageName };
-    }
-
-    // Explicit Method: spoofed_installer
-    if (preferredMethod === 'spoofed_installer') {
-      onLog?.('🎭 بدء التثبيت عبر جلسة الهوية الموثوقة (-i com.android.vending)...', 'info');
-      const res = await this.installViaSpoofedInstaller(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'spoofed_installer', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'spoofed_installer', packageName: effectivePackageName };
-    }
-
-    // Explicit Method: broadcast_intent
-    if (preferredMethod === 'broadcast_intent') {
-      onLog?.('📡 بدء التثبيت عبر حاقن الأوامر وبث النظام المستهدف...', 'info');
-      const res = await this.installViaBroadcastIntent(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'broadcast_intent', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'broadcast_intent', packageName: effectivePackageName };
-    }
-
-    // Explicit Method: car_download_staging
-    if (preferredMethod === 'car_download_staging') {
-      onLog?.('📁 بدء إيداع الحزمة في مجلد التحميلات ومدير ملفات السيارة...', 'info');
-      const res = await this.installViaCarDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'car_download_staging', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'car_download_staging', packageName: effectivePackageName };
-    }
-
-    // Explicit Method: root_su_inject
-    if (preferredMethod === 'root_su_inject') {
-      onLog?.('⚡ بدء التثبيت عبر الحقن المباشر بصلاحيات الروت (su)...', 'info');
-      const res = await this.installViaRootSuInject(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'root_su_inject', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'root_su_inject', packageName: effectivePackageName };
-    }
-
-    // Fallback default: package_installer_ui
-    const defRes = await this.installViaPackageInstallerUI(adb, file, onProgress, onLog, effectivePackageName);
-    return { ...defRes, methodUsed: 'package_installer_ui', packageName: effectivePackageName };
+    onLog?.('📁 بدء إيداع الحزمة في مجلد Download الرسمي لسيارة Jetour...', 'info');
+    const stagedRes = await this.installViaCarDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
+    return { ...stagedRes, methodUsed: 'car_download_staging', packageName: stagedRes.packageName || effectivePackageName };
   }
 
   /**
@@ -878,7 +731,7 @@ export class ApkInstaller {
     try {
       // Create session without -g / grantRuntimePermissions to avoid SecurityException on car ROMs
       session = await PackageManagerInstallSession.create(pm, {
-        allowTest: true,
+        allowTest: false,
         requestDowngrade: false,
       });
       onLog?.(`تم فتح جلسة التثبيت بنجاح: [جلسة رقم ${session.id}]`, 'info');

@@ -15,7 +15,8 @@ export interface DeviceInfo {
 }
 
 export type InstallMethod = 
-  | 'auto' 
+  | 'auto'
+  | 'jetour_official'
   | 'jetour_helper'
   | 'package_installer_ui' 
   | 'restriction_annihilator' 

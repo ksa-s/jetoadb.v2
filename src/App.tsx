@@ -28,7 +28,7 @@ export default function App() {
   // APK Queue
   const [apkList, setApkList] = useState<ApkItem[]>([]);
   const [isInstalling, setIsInstalling] = useState(false);
-  const [selectedMethod, setSelectedMethod] = useState<InstallMethod>('auto');
+  const [selectedMethod, setSelectedMethod] = useState<InstallMethod>('jetour_official');
 
   // Shell
   const [isExecutingShell, setIsExecutingShell] = useState(false);
