@@ -302,18 +302,8 @@ export async function ensureGtHelperOnDevice(
 
   onLog?.('جاري نقل حزمة المثبت الاحتياطي المستقل (g.jar) لشاشات جيتور T2...', 'info');
 
-  let jarBytes: Uint8Array;
-  try {
-    // Try fetching from local static server first
-    const res = await fetch('/tools/g.jar');
-    if (res.ok) {
-      jarBytes = new Uint8Array(await res.arrayBuffer());
-    } else {
-      jarBytes = base64ToUint8Array(GT_JAR_BASE64);
-    }
-  } catch {
-    jarBytes = base64ToUint8Array(GT_JAR_BASE64);
-  }
+  // Decode embedded base64 directly - 100% offline, zero network reliance, zero HTTP 404
+  const jarBytes = base64ToUint8Array(GT_JAR_BASE64);
 
   // 1. Try push via syncPushBytes
   let delivered = false;
@@ -407,45 +397,11 @@ export async function installViaGtHelper(
 
   onLog?.(`> sh ${HELPER_SH_PATH}`, 'info');
 
-  // Launch a concurrent background monitor to tap [Install] / [Confirm] if the screen asks for confirmation
-  let isRunning = true;
-  const backgroundClicker = (async () => {
-    // Wait for r.sh to create session and trigger commit
-    await new Promise((r) => setTimeout(r, 2000));
-    let screenW = 1920;
-    let screenH = 1080;
-    try {
-      const sizeOut = await adbManager.execShell(adb, 'wm size 2>/dev/null');
-      const match = sizeOut.match(/(\d+)x(\d+)/);
-      if (match && match[1] && match[2]) {
-        screenW = parseInt(match[1], 10);
-        screenH = parseInt(match[2], 10);
-      }
-    } catch {}
-
-    const targetX = Math.round(screenW * 0.5);
-    const targetY = Math.round(screenH * 0.575);
-
-    while (isRunning) {
-      try {
-        const focusOut = await adbManager.execShell(adb, 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp" 2>/dev/null || dumpsys activity top 2>/dev/null');
-        if (/packageinstaller|InstallAppProgress|PackageInstallerActivity|PackageInstaller|InstallStart|ConfirmInstall/i.test(focusOut)) {
-          onLog?.('رصد نافذة تأكيد التثبيت على شاشة السيارة، جاري النقر التلقائي...', 'info');
-          await adbManager.execShell(adb, `input tap ${targetX} ${targetY} 2>/dev/null`);
-          await adbManager.execShell(adb, 'input keyevent 22 2>/dev/null && input keyevent 66 2>/dev/null');
-          await adbManager.execShell(adb, 'input keyevent 66 2>/dev/null');
-        }
-      } catch {}
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-  })();
-
-  // Execute r.sh in interactive session
+  // Execute r.sh in interactive session directly without simulated taps
   let out = '';
   try {
     out = await runInteractiveShellSession(adb, [`sh ${HELPER_SH_PATH}`], 180000);
   } finally {
-    isRunning = false;
   }
   onLog?.(`استجابة محرك التثبيت: ${out.trim()}`, 'info');
 

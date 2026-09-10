@@ -1,6 +1,32 @@
 import { Adb } from '@yume-chan/adb';
 import { ApkInstaller } from './adb/apk-installer';
 import { InstallMethod } from '../types';
+import { 
+  EMBEDDED_GARAGESPLIT_B64, 
+  EMBEDDED_GARAGEHELPER_B64, 
+  EMBEDDED_GARAGEREMOTE_B64 
+} from './embedded-apks';
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function resolveAppUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  const base = (import.meta as any).env?.BASE_URL || '/';
+  const cleanPath = url.startsWith('/') ? url.slice(1) : url;
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  try {
+    return new URL(`${cleanBase}${cleanPath}`, window.location.origin).href;
+  } catch {
+    return url;
+  }
+}
 
 export interface DirectAppItem {
   id: string;
@@ -19,6 +45,7 @@ export interface DirectAppItem {
   rebootRequired?: boolean;
   postInstall?: string[];
   note?: string;
+  isEmbedded?: boolean;
 }
 
 export const DIRECT_CAR_APPS: DirectAppItem[] = [
@@ -32,10 +59,11 @@ export const DIRECT_CAR_APPS: DirectAppItem[] = [
     fileUrl: '/apks/bundle/garagesplit.apk',
     approxSizeMb: 0.1,
     packageName: 'com.garagetool.split',
-    badge: 'حل مشكلة القائمة الرئيسية',
+    badge: 'مدمج داخلياً 100%',
     badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
     accentColor: 'emerald',
     rebootRequired: true,
+    isEmbedded: true,
     postInstall: [
       'settings put global enable_freeform_support 1',
       'settings put global force_resizable_activities 1',
@@ -56,13 +84,38 @@ export const DIRECT_CAR_APPS: DirectAppItem[] = [
     fileUrl: '/apks/bundle/garagehelper.apk',
     approxSizeMb: 0.1,
     packageName: 'com.garagetool.helper',
-    badge: 'أساسي للنظام',
+    badge: 'مدمج داخلياً 100%',
     badgeColor: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
     accentColor: 'indigo',
+    isEmbedded: true,
     postInstall: [
       'pm grant com.garagetool.helper android.permission.WRITE_SECURE_SETTINGS',
       'dpm set-device-owner com.garagetool.helper/.AdminReceiver',
     ],
+  },
+  {
+    id: 'garageremote',
+    name: 'GarageRemote',
+    nameAr: 'متحكم أزرار الدركسون وعجلة القيادة (GarageRemote)',
+    category: 'system',
+    description: 'تفعيل أزرار عجلة القيادة (المقود) لتقليب الأغاني ورفع/خفض الصوت والتحكم بالتشغيل مباشرة.',
+    fileName: 'garageremote.apk',
+    fileUrl: '/apks/bundle/garageremote.apk',
+    approxSizeMb: 0.1,
+    packageName: 'com.garage.yamusic',
+    badge: 'مدمج داخلياً 100%',
+    badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
+    accentColor: 'teal',
+    rebootRequired: true,
+    isEmbedded: true,
+    postInstall: [
+      'cmd notification allow_listener com.garage.yamusic/com.garage.yamusic.YaNotificationListener',
+      'dumpsys deviceidle whitelist +com.garage.yamusic',
+      'pm grant com.garage.yamusic android.permission.READ_LOGS',
+      'monkey -p com.garage.yamusic -c android.intent.category.LAUNCHER 1',
+      'am start-foreground-service com.garage.yamusic/.OverlayService',
+    ],
+    note: 'ملاحظة: بعد تثبيت هذا التطبيق، يجب إعادة تشغيل السيارة (إطفاء المحرك والشاشة ثم التشغيل) لتبدأ أزرار المقود بالعمل.',
   },
   {
     id: 'cx_file_explorer',
@@ -86,74 +139,6 @@ export const DIRECT_CAR_APPS: DirectAppItem[] = [
     ],
   },
   {
-    id: 'yandex_navigator',
-    name: 'Yandex Navigator',
-    nameAr: 'ياندكس نافيجيتور (خرائط وملاحة حية مع كشف المسارات)',
-    category: 'navigation',
-    description: 'تطبيق الملاحة والخرائط الدقيقة مع التوجيه الصوتي، حركة المرور المباشرة، مع فتح صلاحيات الموقع والتخزين بالكامل لشاشات السيارات.',
-    fileName: 'yandex-navigator.apk',
-    fileUrl: '/apks/bundle/yandex-navigator.apk',
-    approxSizeMb: 256,
-    packageName: 'ru.yandex.yandexnavi',
-    badge: 'ملاحة وخرائط',
-    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    accentColor: 'amber',
-    postInstall: [
-      'pm grant ru.yandex.yandexnavi android.permission.ACCESS_FINE_LOCATION',
-      'pm grant ru.yandex.yandexnavi android.permission.READ_EXTERNAL_STORAGE',
-      'pm grant ru.yandex.yandexnavi android.permission.WRITE_EXTERNAL_STORAGE',
-      'pm grant ru.yandex.yandexnavi android.permission.ACCESS_COARSE_LOCATION',
-      'pm grant ru.yandex.yandexnavi android.permission.ACCESS_BACKGROUND_LOCATION',
-      'settings put secure location_mode 3',
-    ],
-  },
-  {
-    id: 'yandex_music',
-    name: 'Yandex Music',
-    nameAr: 'ياندكس ميوزك (مشغل الموسيقى والبودكاست)',
-    category: 'media',
-    description: 'مشغل الموسيقى والبودكاست المتوافق تماماً مع أزرار مقود السيارة وتشغيل المقاطع بجودة صوت نقية.',
-    fileName: 'yandex-music.apk',
-    fileUrl: '/apks/bundle/yandex-music.apk',
-    approxSizeMb: 45,
-    packageName: 'ru.yandex.music',
-    badge: 'صوتيات وموسيقى',
-    badgeColor: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
-    accentColor: 'yellow',
-    postInstall: [
-      'pm grant ru.yandex.music android.permission.READ_EXTERNAL_STORAGE',
-      'pm grant ru.yandex.music android.permission.WRITE_EXTERNAL_STORAGE',
-    ],
-  },
-  {
-    id: 'vk_video',
-    name: 'VK Video',
-    nameAr: 'فيديوهات VK (مشغل الفيديو والمقاطع عبر الإنترنت)',
-    category: 'media',
-    description: 'مشاهدة مقاطع الفيديو والأفلام عبر الإنترنت بجودة عالية على شاشة السيارة.',
-    fileName: 'vk-video.apk',
-    fileUrl: '/apks/bundle/vk-video.apk',
-    approxSizeMb: 150,
-    packageName: 'com.vk.video',
-    badge: 'فيديو وسينما',
-    badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
-    accentColor: 'sky',
-  },
-  {
-    id: 'replaio',
-    name: 'Replaio Radio',
-    nameAr: 'راديو الإنترنت Replaio (محطات الراديو العالمية)',
-    category: 'media',
-    description: 'استماع لمحطات الراديو العربية والعالمية عبر الإنترنت بصوت رقمي نقي وبدون تشويش ترددات FM.',
-    fileName: 'replaio.apk',
-    fileUrl: '/apks/bundle/replaio.apk',
-    approxSizeMb: 40,
-    packageName: 'com.replaio.radio',
-    badge: 'راديو إنترنت',
-    badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-    accentColor: 'purple',
-  },
-  {
     id: 'hud_speed_pro',
     name: 'HUD Speed Pro',
     nameAr: 'كاشف الرادارات والسرعة (HUD Speed Pro)',
@@ -175,27 +160,19 @@ export const DIRECT_CAR_APPS: DirectAppItem[] = [
     ],
   },
   {
-    id: 'garageremote',
-    name: 'GarageRemote',
-    nameAr: 'متحكم أزرار الدركسون وعجلة القيادة (GarageRemote)',
-    category: 'system',
-    description: 'تفعيل أزرار عجلة القيادة (المقود) لتقليب الأغاني ورفع/خفض الصوت والتحكم بالتشغيل مباشرة.',
-    fileName: 'garageremote.apk',
-    fileUrl: '/apks/bundle/garageremote.apk',
-    approxSizeMb: 0.1,
-    packageName: 'com.garage.yamusic',
-    badge: 'أزرار الدركسون',
-    badgeColor: 'bg-teal-500/20 text-teal-300 border-teal-500/30',
-    accentColor: 'teal',
-    rebootRequired: true,
-    postInstall: [
-      'cmd notification allow_listener com.garage.yamusic/com.garage.yamusic.YaNotificationListener',
-      'dumpsys deviceidle whitelist +com.garage.yamusic',
-      'pm grant com.garage.yamusic android.permission.READ_LOGS',
-      'monkey -p com.garage.yamusic -c android.intent.category.LAUNCHER 1',
-      'am start-foreground-service com.garage.yamusic/.OverlayService',
-    ],
-    note: 'ملاحظة: بعد تثبيت هذا التطبيق، يجب إعادة تشغيل السيارة (إطفاء المحرك والشاشة ثم التشغيل) لتبدأ أزرار المقود بالعمل.',
+    id: 'smart_tube',
+    name: 'SmartTube Car Edition',
+    nameAr: 'يوتيوب شاشات السيارات الذكي (SmartTube)',
+    category: 'media',
+    description: 'النسخة الخفيفة والأفضل هندسياً لشاشات السيارات وعجلات القيادة. بدون إعلانات، 4K، خفيفة جداً، وتعمل بكفاءة حتى بدون مايكرو سيرفس.',
+    fileName: 'smart_tube.apk',
+    fileUrl: '/apks/smart_tube.apk',
+    approxSizeMb: 26,
+    packageName: 'com.liskovsoft.videomanager',
+    badge: 'موصى به للشاشات',
+    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    accentColor: 'amber',
+    requiresMicroG: false,
   },
   {
     id: 'youtube_revanced',
@@ -205,7 +182,7 @@ export const DIRECT_CAR_APPS: DirectAppItem[] = [
     description: 'يوتيوب بدون إعلانات نهائياً مع ميزة التشغيل في الخلفية والشاشة مطفأة، ميزة تجاوز مقاطع الرعاة SponsorBlock، والتحكم باللمس.',
     fileName: 'youtube_revanced.apk',
     fileUrl: '/apks/youtube_revanced.apk',
-    approxSizeMb: 117,
+    approxSizeMb: 26,
     packageName: 'app.revanced.android.youtube',
     badge: 'بدون إعلانات',
     badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
@@ -226,26 +203,11 @@ export const DIRECT_CAR_APPS: DirectAppItem[] = [
     badgeColor: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
     accentColor: 'cyan',
   },
-  {
-    id: 'smart_tube',
-    name: 'SmartTube Car Edition',
-    nameAr: 'يوتيوب شاشات السيارات الذكي (SmartTube)',
-    category: 'media',
-    description: 'النسخة الخفيفة والأفضل هندسياً لشاشات السيارات وعجلات القيادة. بدون إعلانات، 4K، خفيفة جداً، وتعمل بكفاءة حتى بدون مايكرو سيرفس.',
-    fileName: 'smart_tube.apk',
-    fileUrl: '/apks/smart_tube.apk',
-    approxSizeMb: 26,
-    packageName: 'com.liskovsoft.videomanager',
-    badge: 'موصى به للشاشات',
-    badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-    accentColor: 'amber',
-    requiresMicroG: false,
-  },
 ];
 
 /**
- * Downloads a pre-configured car application with live progress and installs it directly
- * onto the connected car head unit using the Jetour T2 GtInstall engine.
+ * Downloads or retrieves a pre-configured car application with live progress and installs it directly
+ * onto the connected car head unit.
  */
 export async function downloadAndInstallCarApp(
   adb: Adb,
@@ -254,55 +216,72 @@ export async function downloadAndInstallCarApp(
   onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
   installMethod: InstallMethod = 'auto'
 ): Promise<{ success: boolean; message: string }> {
-  onLog?.(`بدء تحميل تطبيق ${app.nameAr} (${app.approxSizeMb} MB)...`, 'info');
-  onProgress?.(5, 'downloading', `جاري الاتصال وتحميل ${app.name}...`);
+  onLog?.(`بدء معالجة تطبيق ${app.nameAr} (${app.approxSizeMb} MB)...`, 'info');
+  onProgress?.(5, 'downloading', `جاري تجهيز ${app.name}...`);
 
   try {
-    const response = await fetch(app.fileUrl);
-    if (!response.ok) {
-      throw new Error(`فشل تحميل ملف التطبيق من الخادم (HTTP ${response.status})`);
-    }
+    let fullBuffer: Uint8Array;
 
-    const contentLength = Number(response.headers.get('Content-Length')) || app.approxSizeMb * 1024 * 1024;
-    const reader = response.body?.getReader();
+    // Check if app is embedded in memory (Zero HTTP requests, guaranteed no 404)
+    if (app.id === 'garagesplit') {
+      onLog?.('استرجاع حزمة GarageSplit من الذاكرة المدمجة فوراً (بدون اتصال بالشبكة)...', 'info');
+      fullBuffer = base64ToUint8Array(EMBEDDED_GARAGESPLIT_B64);
+    } else if (app.id === 'garagehelper') {
+      onLog?.('استرجاع حزمة GarageHelper من الذاكرة المدمجة فوراً (بدون اتصال بالشبكة)...', 'info');
+      fullBuffer = base64ToUint8Array(EMBEDDED_GARAGEHELPER_B64);
+    } else if (app.id === 'garageremote') {
+      onLog?.('استرجاع حزمة GarageRemote من الذاكرة المدمجة فوراً (بدون اتصال بالشبكة)...', 'info');
+      fullBuffer = base64ToUint8Array(EMBEDDED_GARAGEREMOTE_B64);
+    } else {
+      // Normal fetch with URL resolution
+      const targetUrl = resolveAppUrl(app.fileUrl);
+      onLog?.(`جاري تنزيل الحزمة من ${targetUrl}...`, 'info');
+      const response = await fetch(targetUrl);
+      if (!response.ok) {
+        throw new Error(`فشل تحميل ملف التطبيق من المسار المحدد (HTTP ${response.status})`);
+      }
 
-    if (!reader) {
-      throw new Error('تعذر قراءة مسار التنزيل المتدفق.');
-    }
+      const contentLength = Number(response.headers.get('Content-Length')) || app.approxSizeMb * 1024 * 1024;
+      const reader = response.body?.getReader();
 
-    const chunks: Uint8Array[] = [];
-    let receivedBytes = 0;
+      if (!reader) {
+        throw new Error('تعذر قراءة مسار التنزيل المتدفق.');
+      }
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        receivedBytes += value.length;
-        const pct = Math.min(98, Math.round((receivedBytes / contentLength) * 100));
-        const mb = (receivedBytes / (1024 * 1024)).toFixed(1);
-        const totalMb = (contentLength / (1024 * 1024)).toFixed(1);
-        onProgress?.(pct, 'downloading', `جاري التنزيل: ${mb} / ${totalMb} MB (${pct}%)...`);
+      const chunks: Uint8Array[] = [];
+      let receivedBytes = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          receivedBytes += value.length;
+          const pct = Math.min(98, Math.round((receivedBytes / contentLength) * 100));
+          const mb = (receivedBytes / (1024 * 1024)).toFixed(1);
+          const totalMb = (contentLength / (1024 * 1024)).toFixed(1);
+          onProgress?.(pct, 'downloading', `جاري التنزيل: ${mb} / ${totalMb} MB (${pct}%)...`);
+        }
+      }
+
+      // Merge chunks
+      fullBuffer = new Uint8Array(receivedBytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        fullBuffer.set(chunk, offset);
+        offset += chunk.length;
       }
     }
 
-    // Merge chunks
-    const fullBuffer = new Uint8Array(receivedBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      fullBuffer.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    onLog?.(`اكتمل تحميل ${app.name} (${(receivedBytes / (1024 * 1024)).toFixed(1)} MB). جاري الرفع والتثبيت على شاشة السيارة...`, 'success');
-    onProgress?.(100, 'uploading', 'تم التنزيل بنجاح، جاري الرفع للشاشة...');
+    onLog?.(`اكتمل تجهيز ${app.name} (${(fullBuffer.length / (1024 * 1024)).toFixed(1)} MB). جاري التثبيت على شاشة السيارة...`, 'success');
+    onProgress?.(100, 'uploading', 'تم تجهيز الحزمة، جاري بدء التثبيت...');
 
     // Wrap into File object
     const file = new File([fullBuffer], app.fileName, {
       type: 'application/vnd.android.package-archive',
     });
 
-    // Install using universal Auto method (or specified protocol)
+    // Install using selected protocol
     const result = await ApkInstaller.installApk(
       adb,
       file,

@@ -217,15 +217,13 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
           <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
           <span className="text-slate-400 font-medium">البروتوكول المعتمد لرفع وتثبيت APK:</span>
           <span className="font-bold text-slate-100 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-750 font-mono">
-            {selectedMethod === 'auto' && '🌟 الوضع التلقائي الذكي الشامل (Auto Multi-Stage)'}
-            {selectedMethod === 'jetour_official' && '🛡️ مثبت Jetour الرسمي (PackageInstaller Session)'}
-            {selectedMethod === 'jetour_helper' && '🚀 محرك r.sh و GtInstall المستقل (Jetour T2)'}
-            {selectedMethod === 'package_installer_ui' && '🖥️ واجهة مثبت النظام الرسمية مع النقر التلقائي'}
-            {selectedMethod === 'restriction_annihilator' && '💥 ناسف قيود النظام والمستخدمين (0 و 10)'}
-            {selectedMethod === 'spoofed_installer' && '🎭 جلسة التثبيت بالهوية الموثوقة (Play Store)'}
-            {selectedMethod === 'broadcast_intent' && '📡 حاقن أوامر وبث النظام (Desay SV / Chery)'}
-            {selectedMethod === 'car_download_staging' && '📁 إيداع مجلد التحميلات ومدير الملفات (/sdcard/Download)'}
-            {selectedMethod === 'root_su_inject' && '⚡ الحقن المباشر بصلاحيات الروت (su / xbin)'}
+            {selectedMethod === 'auto' && '🌟 المحرك التلقائي الذكي المتكيف (Auto Smart)'}
+            {selectedMethod === 'stream_session' && '🛡️ جلسة الحزم المتدفقة المباشرة (Direct Streaming)'}
+            {selectedMethod === 'app_process_gt' && '🚀 محرك الجافا المستقل (Automotive app_process / GtInstall)'}
+            {selectedMethod === 'active_user' && '👤 تثبيت المستخدم النشط لشاشات السيارات (Active Car User)'}
+            {selectedMethod === 'desay_broadcast' && '📡 حاقن بث المصنع المباشر (Desay SV / Chery)'}
+            {selectedMethod === 'download_staging' && '📁 إيداع مجلد التحميلات ومدير الملفات (/sdcard/Download)'}
+            {selectedMethod === 'root_su' && '⚡ الحقن المباشر بصلاحيات الروت (Root su)'}
           </span>
         </div>
 
@@ -355,13 +353,13 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                       </button>
 
                         <button
-                        onClick={() => onInstallSingle(item, 'jetour_official')}
+                        onClick={() => onInstallSingle(item, 'stream_session')}
                         disabled={isInstalling || !isConnected}
                         className="text-[11px] font-semibold text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="التثبيت عبر جلسة Jetour الرسمية مع موافقة المستخدم"
+                        title="التثبيت عبر جلسة الحزم المتدفقة المباشرة"
                       >
                         <ShieldAlert className="w-3 h-3" />
-                        <span>المثبت الرسمي</span>
+                        <span>جلسة الحزم المتدفقة</span>
                       </button>
 
                       {item.packageName && onExposeApp && (
@@ -436,12 +434,12 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                         💡 رفض النظام التثبيت. استخدم حزمة معتمدة من Jetour ووافق على طلب التثبيت من شاشة السيارة.
                       </span>
                       <button
-                        onClick={() => onInstallSingle(item, 'jetour_official')}
+                        onClick={() => onInstallSingle(item, 'stream_session')}
                         disabled={isInstalling || !isConnected}
                         className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Zap className="w-3 h-3 fill-current" />
-                        <span>إعادة المحاولة بالمثبت الرسمي</span>
+                        <span>إعادة المحاولة بجلسة الحزم المتدفقة</span>
                       </button>
                     </div>
                   )}
@@ -451,15 +449,15 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                     item.errorMessage.includes('زر (تثبيت)')) && (
                     <div className="mr-6 bg-amber-950/50 border border-amber-500/40 rounded-lg p-2.5 flex items-center justify-between flex-wrap gap-2 text-[11px]">
                       <span className="text-amber-200 font-medium">
-                        🚗 نظام جيتور يطلب تأكيد التثبيت. أكمل الموافقة يدويًا من شاشة السيارة.
+                        🚗 نظام السيارة يمنع التثبيت المباشر. يُنصح بتجربة محرك GtInstall المستقل.
                       </span>
                       <button
-                        onClick={() => onInstallSingle(item, 'jetour_official')}
+                        onClick={() => onInstallSingle(item, 'app_process_gt')}
                         disabled={isInstalling || !isConnected}
                         className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow"
                       >
                         <Zap className="w-3.5 h-3.5 fill-current text-amber-200" />
-                        <span>إعادة التثبيت الرسمي</span>
+                        <span>تشغيل محرك GtInstall</span>
                       </button>
                     </div>
                   )}

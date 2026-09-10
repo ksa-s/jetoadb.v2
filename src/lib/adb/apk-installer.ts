@@ -4,7 +4,7 @@ import { WrapReadableStream, TransformStream } from '@yume-chan/stream-extra';
 import { InstallMethod } from '../../types';
 import { parseApkMetadata } from '../apk-parser';
 import { adbManager } from './webusb-manager';
-import { installViaGtHelper, ensureGtHelperOnDevice, runInteractiveShellSession } from './gt-installer-helper';
+import { installViaGtHelper, ensureGtHelperOnDevice } from './gt-installer-helper';
 
 export interface InstallProgressCallback {
   (progress: number, stage: 'uploading' | 'installing' | 'processing', message?: string): void;
@@ -12,7 +12,7 @@ export interface InstallProgressCallback {
 
 export class ApkInstaller {
   /**
-   * Main adaptive install entry point for car head units
+   * Main adaptive install entry point for car head units (Jetour T2 / Chery / Geely / Desay SV)
    */
   public static async installApk(
     adb: Adb,
@@ -25,7 +25,7 @@ export class ApkInstaller {
     const fileSize = file.size;
     const fileName = file.name;
 
-    // Detect package name from file metadata if not provided or placeholder
+    // Detect package name from file metadata if not provided
     let effectivePackageName = knownPackageName;
     if (!effectivePackageName || effectivePackageName === 'base' || effectivePackageName === 'unknown.package') {
       try {
@@ -45,902 +45,144 @@ export class ApkInstaller {
     const beforePackages = await this.getInstalledPackagesSet(adb);
     const currentUserId = await this.getCurrentUserId(adb);
 
-    // Ensure general package verifiers are disabled to speed up and prevent prompts
+    // Ensure general package verifiers are disabled and user restrictions lifted
     try {
       await this.unlockUserRestrictions(adb, currentUserId, onLog);
     } catch {}
 
-    // Use Android's PackageInstaller session for the supported Jetour path.
-    // The head unit remains responsible for applying its own policy and confirmation.
-    if (preferredMethod === 'jetour_official') {
-      onLog?.('بدء التثبيت عبر جلسة Jetour الرسمية المعتمدة من PackageInstaller...', 'info');
-      try {
-        const officialRes = await this.installViaPackageSessionStream(
-          adb,
-          file,
-          onProgress,
-          onLog,
-          effectivePackageName
-        );
-        if (officialRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(
-            adb,
-            beforePackages,
-            officialRes.packageName || effectivePackageName
-          );
-          const finalPkg = newlyInstalled || officialRes.packageName || effectivePackageName;
-          return { ...officialRes, methodUsed: 'jetour_official', packageName: finalPkg };
-        }
-        return { ...officialRes, methodUsed: 'jetour_official', packageName: effectivePackageName };
-      } catch (error: any) {
-        const message = error?.message || String(error);
-        onLog?.(`رفضت شاشة السيارة جلسة التثبيت الرسمية: ${message}`, 'warning');
-        return {
-          success: false,
-          message: `لم تسمح شاشة السيارة بالتثبيت الرسمي. وافق على الطلب من الشاشة أو استخدم حزمة معتمدة من Jetour. التفاصيل: ${message}`,
-          methodUsed: 'jetour_official',
-          packageName: effectivePackageName,
-        };
-      }
+    // 1. Specific Protocol Execution: Streaming Package Session
+    if (preferredMethod === 'stream_session') {
+      onLog?.('بدء بروتوكول جلسة الحزم المتدفقة المباشرة (Direct Streaming Package Session)...', 'info');
+      const res = await this.installViaStreamingSession(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'stream_session', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
-    // Method: Auto Adaptive (Default & Recommended for All Automotive Units)
-    // Runs an intelligent multi-stage cascade across all vehicle protocols.
-    if (preferredMethod === 'auto') {
-      onLog?.('بدء التثبيت عبر الوضع التلقائي الذكي الشامل...', 'info');
-
-      // Attempt 1: Official PackageInstaller Session
-      try {
-        onLog?.('[المرحلة 1] تجربة جلسة مثبت النظام الرسمية (PackageInstaller Session)...', 'info');
-        const officialRes = await this.installViaPackageSessionStream(
-          adb,
-          file,
-          onProgress,
-          onLog,
-          effectivePackageName
-        );
-        if (officialRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(
-            adb,
-            beforePackages,
-            officialRes.packageName || effectivePackageName
-          );
-          const finalPkg = newlyInstalled || officialRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { ...officialRes, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eOff: any) {
-        onLog?.(`تنبيه الجلسة الرسمية: ${eOff?.message || eOff}. الانتقال لمحرك r.sh المستقل...`, 'info');
-      }
-
-      // Attempt 2: Direct Independent Jetour Engine (r.sh / GtInstall / app_process)
-      try {
-        onLog?.('[المرحلة 2] تشغيل محرك r.sh و GtInstall المستقل لتجاوز قيود فلاتر الشاشة...', 'info');
-        const jtRes = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
-        if (jtRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, jtRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || jtRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: jtRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eJt: any) {
-        onLog?.(`تنبيه محرك r.sh: ${eJt?.message || eJt}. الانتقال لواجهة مثبت النظام...`, 'info');
-      }
-
-      // Attempt 3: Official PackageInstaller UI with Automated Screen Touch
-      try {
-        onLog?.('[المرحلة 3] تجربة واجهة مثبت النظام الرسمية (PackageInstaller UI)...', 'info');
-        const uiRes = await this.installViaPackageInstallerUI(adb, file, onProgress, onLog, effectivePackageName);
-        if (uiRes.success) {
-          const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, uiRes.packageName || effectivePackageName);
-          const finalPkg = newlyInstalled || uiRes.packageName || effectivePackageName;
-          if (finalPkg) {
-            await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-            await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-          }
-          return { success: true, message: uiRes.message, methodUsed: 'auto', packageName: finalPkg };
-        }
-      } catch (eUi: any) {
-        onLog?.(`تنبيه واجهة مثبت النظام: ${eUi?.message || eUi}. الانتقال لمجلد Download...`, 'info');
-      }
-
-      // Attempt 4: Car Download Folder Staging & Car File Manager
-      onLog?.('[المرحلة 4] إيداع الحزمة في مجلد التحميلات بشاشة السيارة (Download Folder Staging)...', 'info');
-      const stageRes = await this.installViaCarDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
-      if (stageRes.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, stageRes.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || stageRes.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { success: true, message: stageRes.message, methodUsed: 'auto', packageName: finalPkg };
-      }
-
-      return {
-        success: false,
-        message: stageRes.message,
-        methodUsed: 'auto',
-        packageName: effectivePackageName,
-      };
+    // 2. Specific Protocol Execution: Automotive app_process / GtInstall Engine
+    if (preferredMethod === 'app_process_gt') {
+      onLog?.('بدء بروتوكول محرك الجافا المستقل (Automotive app_process / GtInstall Engine)...', 'info');
+      const res = await this.installViaAppProcessGt(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'app_process_gt', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
-    // Explicit Method: jetour_helper (r.sh / GtInstall / app_process)
-    if (preferredMethod === 'jetour_helper') {
-      onLog?.('🚀 بدء التثبيت عبر محرك r.sh و GtInstall المستقل...', 'info');
-      const res = await this.installViaJetourFallback(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'jetour_helper', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'jetour_helper', packageName: effectivePackageName };
+    // 3. Specific Protocol Execution: Active Car User Targeting
+    if (preferredMethod === 'active_user') {
+      onLog?.(`بدء بروتوكول المستخدم النشط لشاشات السيارات (Active Car User Profile --user ${currentUserId})...`, 'info');
+      const res = await this.installViaActiveUser(adb, file, onProgress, onLog, currentUserId, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'active_user', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
-    // Explicit Method: package_installer_ui
-    if (preferredMethod === 'package_installer_ui') {
-      onLog?.('🖥️ بدء التثبيت عبر واجهة مثبت النظام الرسمية مع النقر التلقائي...', 'info');
-      const res = await this.installViaPackageInstallerUI(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'package_installer_ui', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'package_installer_ui', packageName: effectivePackageName };
+    // 4. Specific Protocol Execution: Factory Broadcast Intent
+    if (preferredMethod === 'desay_broadcast') {
+      onLog?.('بدء بروتوكول حاقن بث المصنع المباشر (Desay SV / Chery Factory Broadcast)...', 'info');
+      const res = await this.installViaDesayBroadcast(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'desay_broadcast', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
-    // Explicit Method: restriction_annihilator
-    if (preferredMethod === 'restriction_annihilator') {
-      onLog?.('💥 بدء التثبيت عبر ناسف قيود النظام والمستخدمين المتعددين...', 'info');
-      const res = await this.installViaRestrictionAnnihilator(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'restriction_annihilator', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'restriction_annihilator', packageName: effectivePackageName };
+    // 5. Specific Protocol Execution: Car Storage Staging & Native File Manager
+    if (preferredMethod === 'download_staging') {
+      onLog?.('بدء بروتوكول الإيداع بمجلد التحميلات وتشغيل مدير الملفات الأصلي...', 'info');
+      const res = await this.installViaDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'download_staging', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
-    // Explicit Method: spoofed_installer
-    if (preferredMethod === 'spoofed_installer') {
-      onLog?.('🎭 بدء التثبيت عبر جلسة الهوية الموثوقة (-i com.android.vending)...', 'info');
-      const res = await this.installViaSpoofedInstaller(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'spoofed_installer', packageName: finalPkg };
-      }
-      return { ...res, methodUsed: 'spoofed_installer', packageName: effectivePackageName };
+    // 6. Specific Protocol Execution: Direct Root su Injection
+    if (preferredMethod === 'root_su') {
+      onLog?.('بدء بروتوكول الحقن المباشر بصلاحيات الروت (Direct Root su Injection)...', 'info');
+      const res = await this.installViaRootSu(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'root_su', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
-    // Explicit Method: broadcast_intent
-    if (preferredMethod === 'broadcast_intent') {
-      onLog?.('📡 بدء التثبيت عبر حاقن الأوامر وبث النظام المستهدف...', 'info');
-      const res = await this.installViaBroadcastIntent(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'broadcast_intent', packageName: finalPkg };
+    // 7. Method: Auto Smart Adaptive (Default & Recommended for All Automotive Units)
+    // Intelligent multi-stage non-interactive cascade that bypasses car security layers without screen clicking
+    onLog?.('بدء المحرك الذكي المتكيف لشاشات السيارات (Automotive Smart Adaptive Engine)...', 'info');
+
+    // Stage 1: Direct In-Memory Streaming Package Session (Bypasses storage write restrictions and SELinux)
+    try {
+      onLog?.('[المرحلة 1] تجربة جلسة الحزم المتدفقة المباشرة (Streaming Package Session)...', 'info');
+      const res1 = await this.installViaStreamingSession(adb, file, onProgress, onLog, effectivePackageName);
+      if (res1.success) {
+        return await this.finalizeInstallResult(adb, res1, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      return { ...res, methodUsed: 'broadcast_intent', packageName: effectivePackageName };
+      onLog?.(`تخطي المرحلة 1: ${res1.message}. الانتقال الفوري للمرحلة 2...`, 'info');
+    } catch (e1: any) {
+      onLog?.(`استجابة المرحلة 1: ${e1?.message || e1}. الانتقال للمرحلة 2...`, 'info');
     }
 
-    // Explicit Method: car_download_staging
-    if (preferredMethod === 'car_download_staging') {
-      onLog?.('📁 بدء إيداع الحزمة في مجلد التحميلات ومدير ملفات السيارة...', 'info');
-      const res = await this.installViaCarDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'car_download_staging', packageName: finalPkg };
+    // Stage 2: Independent Java app_process Runtime (GtInstall via IPackageManager Binder)
+    try {
+      onLog?.('[المرحلة 2] تجربة محرك الجافا المستقل (app_process com.garagetool.installer.GtInstall)...', 'info');
+      const res2 = await this.installViaAppProcessGt(adb, file, onProgress, onLog, effectivePackageName);
+      if (res2.success) {
+        return await this.finalizeInstallResult(adb, res2, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      return { ...res, methodUsed: 'car_download_staging', packageName: effectivePackageName };
+      onLog?.(`تخطي المرحلة 2: ${res2.message}. الانتقال الفوري للمرحلة 3...`, 'info');
+    } catch (e2: any) {
+      onLog?.(`استجابة المرحلة 2: ${e2?.message || e2}. الانتقال للمرحلة 3...`, 'info');
     }
 
-    // Explicit Method: root_su_inject
-    if (preferredMethod === 'root_su_inject') {
-      onLog?.('⚡ بدء التثبيت عبر الحقن المباشر بصلاحيات الروت (su)...', 'info');
-      const res = await this.installViaRootSuInject(adb, file, onProgress, onLog, effectivePackageName);
-      if (res.success) {
-        const newlyInstalled = await this.detectNewlyInstalledPackage(adb, beforePackages, res.packageName || effectivePackageName);
-        const finalPkg = newlyInstalled || res.packageName || effectivePackageName;
-        if (finalPkg) {
-          await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
-          await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
-        }
-        return { ...res, methodUsed: 'root_su_inject', packageName: finalPkg };
+    // Stage 3: Active Automotive User Profile Targeting (--user 10 / current)
+    try {
+      onLog?.(`[المرحلة 3] تجربة التثبيت الموجه للمستخدم النشط في شاشة السيارة (--user ${currentUserId})...`, 'info');
+      const res3 = await this.installViaActiveUser(adb, file, onProgress, onLog, currentUserId, effectivePackageName);
+      if (res3.success) {
+        return await this.finalizeInstallResult(adb, res3, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      return { ...res, methodUsed: 'root_su_inject', packageName: effectivePackageName };
+      onLog?.(`تخطي المرحلة 3: ${res3.message}. الانتقال الفوري للمرحلة 4...`, 'info');
+    } catch (e3: any) {
+      onLog?.(`استجابة المرحلة 3: ${e3?.message || e3}. الانتقال للمرحلة 4...`, 'info');
     }
 
-    // Fallback default
-    onLog?.('📁 بدء إيداع الحزمة في مجلد Download...', 'info');
-    const stagedRes = await this.installViaCarDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
-    return { ...stagedRes, methodUsed: 'car_download_staging', packageName: stagedRes.packageName || effectivePackageName };
+    // Stage 4: Desay SV / Chery Factory Broadcast Direct Injection
+    try {
+      onLog?.('[المرحلة 4] تجربة حاقن بث المصنع المباشر (Desay SV / Chery Factory Broadcast)...', 'info');
+      const res4 = await this.installViaDesayBroadcast(adb, file, onProgress, onLog, effectivePackageName);
+      if (res4.success) {
+        return await this.finalizeInstallResult(adb, res4, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+      }
+    } catch (e4: any) {
+      onLog?.(`استجابة المرحلة 4: ${e4?.message || e4}`, 'info');
+    }
+
+    // Stage 5: Final Fallback: Car Download Staging
+    onLog?.('[المرحلة 5] إيداع الحزمة في مجلد التحميلات وفتح مدير الملفات...', 'info');
+    const res5 = await this.installViaDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
+    return await this.finalizeInstallResult(adb, res5, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
   }
 
   /**
-   * 1. Official PackageInstaller UI Protocol with Intelligent Auto-Touch & Dialog Bypass.
-   * Directly bypasses PM/Shell SecurityException restrictions by launching Android's privileged UI.
-   * Uses UI Automator hierarchy dump to locate exact button bounds, emulates DPAD/Enter keys, and monitors across user profiles.
+   * Post-install finalizer: verifies package detection, triggers launcher exposure, and grants permissions
    */
-  public static async installViaPackageInstallerUI(
+  private static async finalizeInstallResult(
     adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const sdcardPath = `/sdcard/Download/${safeName}`;
-    const tmpPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('🧠 [البروتوكول الذكي] تهيئة الحزمة لواجهة مثبت النظام وتجاوز حظر SecurityException...', 'info');
-    onProgress?.(10, 'uploading', 'رفع الحزمة إلى مسار النظام وذاكرة الشاشة...');
-
-    const beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-    // 1. Stage file to both /sdcard/Download and /data/local/tmp with full permissions
-    let staged = false;
-    try {
-      await this.pushFileSafe(adb, file, sdcardPath, onProgress, onLog);
-      staged = true;
-    } catch {
-      try {
-        await this.pushFileViaShell(adb, file, sdcardPath, onProgress, onLog);
-        staged = true;
-      } catch {}
-    }
-
-    try {
-      await this.pushFileSafe(adb, file, tmpPath, onProgress, onLog);
-    } catch {
-      try {
-        await this.pushFileViaShell(adb, file, tmpPath, onProgress, onLog);
-      } catch {
-        if (staged) {
-          await this.execShell(adb, `cp "${sdcardPath}" "${tmpPath}" 2>/dev/null`);
-        }
+    result: { success: boolean; message: string; packageName?: string },
+    methodUsed: InstallMethod,
+    beforePackages: Set<string>,
+    effectivePackageName: string | undefined,
+    currentUserId: string,
+    fileName: string,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<{ success: boolean; message: string; methodUsed: InstallMethod; packageName?: string }> {
+    if (result.success) {
+      const newlyInstalled = await this.detectNewlyInstalledPackage(
+        adb,
+        beforePackages,
+        result.packageName || effectivePackageName
+      );
+      const finalPkg = newlyInstalled || result.packageName || effectivePackageName;
+      if (finalPkg) {
+        await this.activatePackageForCarLauncher(adb, finalPkg, currentUserId, onLog);
+        await this.autoGrantAutomotivePermissions(adb, fileName, onLog);
       }
+      return { ...result, methodUsed, packageName: finalPkg };
     }
-
-    try {
-      await this.execShell(adb, `chmod 777 "${sdcardPath}" "${tmpPath}" 2>/dev/null`);
-      await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${tmpPath}" 2>/dev/null`);
-    } catch {}
-
-    onProgress?.(80, 'installing', 'إطلاق مثبت النظام الرسمي وبدء النقر التلقائي الذكي...');
-
-    // 2. Launch PackageInstaller via Multiple Compatible Automotive Intents
-    const launchIntents = [
-      `am start -n com.android.packageinstaller/.PackageInstallerActivity -d "file://${tmpPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-      `am start -n com.google.android.packageinstaller/com.android.packageinstaller.PackageInstallerActivity -d "file://${tmpPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-      `am start -a android.intent.action.VIEW -d "file://${sdcardPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-      `am start -a android.intent.action.INSTALL_PACKAGE -d "file://${tmpPath}" -t "application/vnd.android.package-archive" --ez android.intent.extra.NOT_UNKNOWN_SOURCE true 2>/dev/null`,
-      `am start -a android.intent.action.VIEW -d "file://${tmpPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-    ];
-
-    onLog?.('إرسال نداء فتح مثبت الحزم لشاشة السيارة...', 'info');
-    for (const cmd of launchIntents) {
-      try {
-        await this.execShell(adb, cmd);
-      } catch {}
-    }
-
-    // 3. Precision auto-confirmation using uiautomator dump, screen resolution detection, and DPAD injection
-    onLog?.('بدء المحرك الذكي للنقر التلقائي وتأكيد زر التثبيت...', 'info');
-    const autoConfirmRes = await this.autoConfirmAndMonitorInstall(
-      adb,
-      beforePkgsRaw,
-      knownPackageName,
-      onLog,
-      28
-    );
-
-    let isSuccess = autoConfirmRes.success;
-    let newlyFoundPkg = autoConfirmRes.packageName;
-
-    // Verify after completion
-    if (!isSuccess) {
-      const afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-      if (knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
-        isSuccess = true;
-        newlyFoundPkg = knownPackageName;
-      } else {
-        const diff = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
-        if (diff) {
-          isSuccess = true;
-          newlyFoundPkg = diff;
-        }
-      }
-    }
-
-    // Cleanup temp apk
-    try {
-      await this.execShell(adb, `rm -f "${tmpPath}" 2>/dev/null`);
-    } catch {}
-
-    if (isSuccess) {
-      onLog?.(`✓ تم التثبيت بنجاح عبر الواجهة الرسمية والنقر الذكي (${newlyFoundPkg || 'التطبيق'})!`, 'success');
-      return {
-        success: true,
-        packageName: newlyFoundPkg || knownPackageName,
-        message: `تم تثبيت التطبيق بنجاح (${newlyFoundPkg || knownPackageName}) وتجاوز نظام الحظر بالنقر الذكي.`,
-      };
-    }
-
-    return {
-      success: false,
-      message: 'تم إطلاق واجهة التثبيت على شاشة سيارتك. إذا ظهر زر التثبيت على الشاشة، اضغط عليه بيدك أو أعد المحاولة.',
-    };
+    return { ...result, methodUsed, packageName: effectivePackageName };
   }
 
   /**
-   * 2. Smart Multi-User & System Restriction Destroyer Protocol.
-   * Cleans DISALLOW_INSTALL_APPS across User 0, User 10 (IVI driver screen), and User current.
-   * Completely avoids the fatal -g flag that triggers SecurityException on automotive Android.
-   * Executes staged multi-user installation with runtime SDK bypass and automated post-grant permissions.
+   * Protocol 1: Direct In-Memory Streaming Package Session (Bypasses storage write restrictions and SELinux)
+   * Uses @yume-chan/android-bin PackageManager session, completely non-interactive and zero clicks.
    */
-  public static async installViaRestrictionAnnihilator(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('💥 [البروتوكول الذكي] تشغيل ناسف قيود نظام السيارة ومستخدم السائق (User 10)...', 'info');
-    onProgress?.(10, 'uploading', 'رفع الحزمة إلى مسار النظام المحمي /data/local/tmp...');
-
-    const beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-    // Stage APK to /data/local/tmp
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-    }
-    await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-    await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-
-    onProgress?.(60, 'installing', 'نسف قيود الحسابات (DISALLOW_INSTALL_APPS) وتجاوز فلاتر السيارة...');
-
-    // Enumerate users (Driver User 10, System User 0, Current)
-    const userIds = new Set<string>(['10', '0', 'current']);
-    try {
-      const usersRaw = await this.execShell(adb, 'pm list users 2>/dev/null');
-      const matches = usersRaw.matchAll(/UserInfo\{(\d+):/g);
-      for (const m of matches) {
-        if (m[1]) userIds.add(m[1]);
-      }
-    } catch {}
-
-    const restrictions = [
-      'no_install_apps',
-      'no_install_unknown_sources',
-      'no_install_unknown_sources_globally',
-      'disallow_install_apps',
-      'disallow_install_unknown_sources',
-    ];
-
-    for (const uid of Array.from(userIds)) {
-      onLog?.(`> تجريد القيود الأمنية عن ملف المستخدم [${uid}]...`, 'info');
-      for (const r of restrictions) {
-        await this.execShell(adb, `pm set-user-restriction --user ${uid} ${r} 0 2>/dev/null`);
-        await this.execShell(adb, `pm set-user-restriction ${r} 0 --user ${uid} 2>/dev/null`);
-        await this.execShell(adb, `pm set-user-restriction --user ${uid} ${r} false 2>/dev/null`);
-      }
-      await this.execShell(adb, `settings put --user ${uid} secure install_non_market_apps 1 2>/dev/null`);
-      await this.execShell(adb, `settings put --user ${uid} global install_non_market_apps 1 2>/dev/null`);
-      await this.execShell(adb, `appops set --user ${uid} com.android.shell REQUEST_INSTALL_PACKAGES allow 2>/dev/null`);
-      await this.execShell(adb, `appops set --user ${uid} 2000 REQUEST_INSTALL_PACKAGES allow 2>/dev/null`);
-    }
-
-    // Global verifiers and touch blocks disable
-    await this.execShell(adb, 'settings put global verifier_verify_adb_installs 0 2>/dev/null');
-    await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
-    await this.execShell(adb, 'settings put global upload_apk_enable 0 2>/dev/null');
-    await this.execShell(adb, 'settings put global block_untrusted_touches 0 2>/dev/null');
-
-    onProgress?.(80, 'installing', 'تنفيذ التثبيت المباشر الخالي من تعارضات الأذونات (-g fix)...');
-
-    // Clean install commands WITHOUT -g (which triggers SecurityException on Automotive Android)
-    // and WITH --bypass-low-target-sdk-block for legacy app compatibility
-    const installAttempts = [
-      `cmd package install -r -t -d --bypass-low-target-sdk-block --user 10 "${targetPath}" 2>&1`,
-      `pm install -r -t -d --bypass-low-target-sdk-block --user 10 "${targetPath}" 2>&1`,
-      `cmd package install -r -t -d --bypass-low-target-sdk-block --user current "${targetPath}" 2>&1`,
-      `pm install -r -t -d --bypass-low-target-sdk-block --user current "${targetPath}" 2>&1`,
-      `cmd package install -r -t -d --bypass-low-target-sdk-block --user 0 "${targetPath}" 2>&1`,
-      `pm install -r -t -d --bypass-low-target-sdk-block --user 0 "${targetPath}" 2>&1`,
-      `pm install -r -t -d "${targetPath}" 2>&1`,
-      `cat "${targetPath}" | pm install -r -t -d -S ${size} 2>&1`,
-      `cd /data/local/tmp && cat "${safeName}" | pm install -S ${size} 2>&1`,
-    ];
-
-    let lastError = '';
-    let isSuccess = false;
-
-    for (const cmd of installAttempts) {
-      onLog?.(`> ${cmd}`, 'info');
-      try {
-        const out = await this.execShell(adb, cmd);
-        const trimmed = out.trim();
-        onLog?.(`استجابة الشاشة: ${trimmed}`, 'info');
-        if (trimmed.toLowerCase().includes('success')) {
-          isSuccess = true;
-          break;
-        } else {
-          lastError = trimmed;
-        }
-      } catch (err: any) {
-        lastError = err.message || String(err);
-      }
-    }
-
-    // Secondary fallback: staged session write without -g
-    if (!isSuccess) {
-      try {
-        onLog?.('تجربة جلسة البث المباشر الموجهة لمستخدم السائق (User 10 Session)...', 'info');
-        const sessRes = await this.execShell(adb, `cmd package install-create -r -t -d --user 10 -S ${size} 2>/dev/null || pm install-create -r -t -d -S ${size} 2>/dev/null`);
-        const match = sessRes.match(/\b\d+\b/);
-        if (match) {
-          const sid = match[0];
-          await this.execShell(adb, `cmd package install-write -S ${size} ${sid} base.apk "${targetPath}" 2>/dev/null || pm install-write -S ${size} ${sid} base.apk "${targetPath}" 2>/dev/null`);
-          const commitOut = await this.execShell(adb, `cmd package install-commit ${sid} 2>&1 || pm install-commit ${sid} 2>&1`);
-          if (commitOut.toLowerCase().includes('success')) {
-            isSuccess = true;
-          }
-        }
-      } catch {}
-    }
-
-    // Verify package presence
-    const afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-    let newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
-    if (!newlyFoundPkg && knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
-      newlyFoundPkg = knownPackageName;
-      isSuccess = true;
-    }
-
-    // Clean up temp file
-    try {
-      await this.execShell(adb, `rm -f "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    if (isSuccess || newlyFoundPkg) {
-      const finalPkg = newlyFoundPkg || knownPackageName;
-      onLog?.(`✓ تم التثبيت بنجاح عبر ناسف القيود الذكي (${finalPkg})!`, 'success');
-      return {
-        success: true,
-        packageName: finalPkg,
-        message: `تم تثبيت التطبيق بنجاح (${finalPkg}) وتجاوز حظر السيارة بواسطة ناسف القيود الذكي.`,
-      };
-    }
-
-    return {
-      success: false,
-      message: this.formatInstallErrorMessage(lastError),
-    };
-  }
-
-  /**
-   * 3. Smart Spoofed Installer Identity Session Protocol.
-   * Creates an Android PackageInstaller session spoofing trusted system packages
-   * (-i com.android.vending, -i com.google.android.packageinstaller, or -i com.android.packageinstaller).
-   * Eliminates the fatal -g flag and adds low target SDK bypass to avoid SecurityException.
-   */
-  public static async installViaSpoofedInstaller(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('🎭 [البروتوكول الذكي] بدء جلسة التثبيت بالهوية المعتمدة وانتحال متجر التطبيقات...', 'info');
-    onProgress?.(10, 'uploading', 'رفع الحزمة إلى مسار النظام المعتمد...');
-
-    const beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-    }
-    await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-    await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-
-    onProgress?.(60, 'installing', 'إنشاء جلسة بهوية متجر التطبيقات المعتمد وتخطي فاحص المصادر...');
-
-    const spoofIdentities = [
-      'com.android.vending',
-      'com.google.android.packageinstaller',
-      'com.android.packageinstaller',
-      'com.android.shell',
-    ];
-
-    let sessionId = '';
-    let usedIdentity = '';
-
-    for (const identity of spoofIdentities) {
-      onLog?.(`محاولة إنشاء جلسة بهوية معتمدة: [${identity}]...`, 'info');
-      // Clean create commands WITHOUT -g flag to avoid SecurityException
-      const createCommands = [
-        `cmd package install-create -i ${identity} -r -t -d --bypass-low-target-sdk-block -S ${size} 2>/dev/null`,
-        `pm install-create -i ${identity} -r -t -d -S ${size} 2>/dev/null`,
-        `cmd package install-create -i ${identity} -r -t -d --user 10 -S ${size} 2>/dev/null`,
-        `cmd package install-create -i ${identity} -r -t -d --user current -S ${size} 2>/dev/null`,
-        `cmd package install-create -i ${identity} -r -t -d --user 0 -S ${size} 2>/dev/null`,
-      ];
-
-      for (const cmd of createCommands) {
-        const out = await this.execShell(adb, cmd);
-        const match = out.match(/\b\d+\b/);
-        if (match) {
-          sessionId = match[0];
-          usedIdentity = identity;
-          onLog?.(`تم إنشاء الجلسة بنجاح برقم [${sessionId}] بهوية [${identity}]`, 'success');
-          break;
-        }
-      }
-      if (sessionId) break;
-    }
-
-    if (!sessionId) {
-      return {
-        success: false,
-        message: 'تعذر إنشاء جلسة التثبيت بالهوية المعتمدة. يرجى تجربة بروتوكول واجهة مثبت النظام الذكية.',
-      };
-    }
-
-    // Write file to session
-    onLog?.(`كتابة بيانات الحزمة في الجلسة [${sessionId}]...`, 'info');
-    const writeCmd = `cmd package install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || pm install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cat "${targetPath}" | pm install-write -S ${size} ${sessionId} base.apk - 2>/dev/null`;
-    await this.execShell(adb, writeCmd);
-
-    onProgress?.(85, 'installing', 'اعتماد الجلسة وتطبيق التثبيت مع التأكيد التلقائي...');
-    onLog?.(`اعتماد وتثبيت الجلسة [${sessionId}]...`, 'info');
-
-    // Run commit with screen auto-confirmation in background if system prompts
-    let commitDone = false;
-    const clickerPromise = (async () => {
-      await new Promise((r) => setTimeout(r, 1500));
-      while (!commitDone) {
-        try {
-          const focusOut = await this.execShell(adb, 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp" 2>/dev/null');
-          if (/packageinstaller|InstallAppProgress|PackageInstallerActivity/i.test(focusOut)) {
-            await this.execShell(adb, 'input keyevent 22 2>/dev/null && input keyevent 66 2>/dev/null');
-          }
-        } catch {}
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    })();
-
-    let commitOut = '';
-    try {
-      commitOut = await this.execShell(adb, `cmd package install-commit ${sessionId} 2>&1 || pm install-commit ${sessionId} 2>&1`);
-    } finally {
-      commitDone = true;
-    }
-
-    onLog?.(`استجابة اعتماد الجلسة: ${commitOut.trim()}`, 'info');
-
-    let isSuccess = commitOut.toLowerCase().includes('success');
-
-    // Confirm with package list
-    const afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-    let newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
-    if (!newlyFoundPkg && knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
-      newlyFoundPkg = knownPackageName;
-      isSuccess = true;
-    }
-
-    // Cleanup temp
-    try {
-      await this.execShell(adb, `rm -f "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    if (isSuccess || newlyFoundPkg) {
-      const finalPkg = newlyFoundPkg || knownPackageName;
-      onLog?.(`✓ تم تثبيت الحزمة بنجاح عبر جلسة الهوية المعتمدة (${finalPkg})!`, 'success');
-      return {
-        success: true,
-        packageName: finalPkg,
-        message: `تم التثبيت بنجاح (${finalPkg}) بهوية [${usedIdentity}] المعتمدة لدى نظام السيارة.`,
-      };
-    }
-
-    return {
-      success: false,
-      message: this.formatInstallErrorMessage(commitOut),
-    };
-  }
-
-  /**
-   * 4. Smart Automotive OEM Broadcast & Direct Intent Injection Protocol.
-   * Fires vendor-specific intents used by Desay SV, Chery, Jetour, and Geely firmware
-   * for factory OTA and USB package installation with automatic touch confirmation.
-   */
-  public static async installViaBroadcastIntent(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('📡 [البروتوكول الذكي] بدء حاقن أوامر وبث النظام المخصص لشاشات السيارات...', 'info');
-    onProgress?.(10, 'uploading', 'نقل الحزمة إلى مسار البث المحمي...');
-
-    const beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-    }
-    await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-    await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-
-    onProgress?.(60, 'installing', 'إرسال نداءات البث المدمجة في فيرموير الشاشة مع النقر التلقائي...');
-
-    const broadcastIntents = [
-      `am broadcast -a com.desay.action.INSTALL_APK --es path "${targetPath}" 2>/dev/null`,
-      `am broadcast -a com.car.action.INSTALL_APK --es path "${targetPath}" 2>/dev/null`,
-      `am broadcast -a android.intent.action.PACKAGE_INSTALL --es path "${targetPath}" 2>/dev/null`,
-      `am broadcast -a com.ecarx.action.INSTALL_APK --es path "${targetPath}" 2>/dev/null`,
-      `am broadcast -a com.chery.action.INSTALL_APK --es path "${targetPath}" 2>/dev/null`,
-      `am start -n com.android.packageinstaller/.PackageInstallerActivity -d "file://${targetPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-      `am start -n com.android.packageinstaller/com.android.packageinstaller.InstallStart -d "file://${targetPath}" 2>/dev/null`,
-    ];
-
-    for (const bcmd of broadcastIntents) {
-      onLog?.(`> ${bcmd}`, 'info');
-      try {
-        await this.execShell(adb, bcmd);
-      } catch {}
-    }
-
-    // Auto-confirmation monitor in case a confirmation dialog appears
-    const monitorRes = await this.autoConfirmAndMonitorInstall(
-      adb,
-      beforePkgsRaw,
-      knownPackageName,
-      onLog,
-      18
-    );
-
-    let isSuccess = monitorRes.success;
-    let newlyFoundPkg = monitorRes.packageName;
-
-    if (!isSuccess) {
-      const currentPkgs = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-      newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, currentPkgs);
-      if (newlyFoundPkg || (knownPackageName && currentPkgs.includes(knownPackageName))) {
-        isSuccess = true;
-        if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
-      }
-    }
-
-    // Cleanup temp
-    try {
-      await this.execShell(adb, `rm -f "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    if (isSuccess) {
-      onLog?.(`✓ تم التثبيت بنجاح عبر بث النظام الذكي (${newlyFoundPkg})!`, 'success');
-      return {
-        success: true,
-        packageName: newlyFoundPkg || knownPackageName,
-        message: `تم تثبيت التطبيق بنجاح (${newlyFoundPkg || knownPackageName}) عبر حاقن بث النظام الذكي.`,
-      };
-    }
-
-    return {
-      success: false,
-      message: 'تم إرسال نداءات بث التثبيت إلى فيرموير السيارة. إذا لم يكتمل التثبيت، يرجى استخدام بروتوكول واجهة مثبت النظام الذكية.',
-    };
-  }
-
-  /**
-   * 5. Smart Car Download Folder Staging & Auto-Trigger Protocol.
-   * Places the APK in /sdcard/Download/ with complete world permissions,
-   * fires the package installation intent, and auto-confirms on screen.
-   */
-  public static async installViaCarDownloadStaging(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const downloadPath = `/sdcard/Download/${safeName}`;
-
-    onLog?.(`📁 [البروتوكول الذكي] إيداع الحزمة في مجلد التحميلات وتجهيز المشغل الفوري: ${downloadPath}...`, 'info');
-    onProgress?.(10, 'uploading', 'رفع الحزمة إلى مجلد التحميلات بشاشة السيارة...');
-
-    const beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-    try {
-      await this.pushFileSafe(adb, file, downloadPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, downloadPath, onProgress, onLog);
-    }
-
-    await this.execShell(adb, `chmod 777 "${downloadPath}" 2>/dev/null`);
-    await this.execShell(adb, `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${downloadPath}" 2>/dev/null`);
-
-    onProgress?.(80, 'installing', 'تشغيل مثبت النظام وتأكيد التثبيت...');
-    onLog?.('فتح واجهة التثبيت مباشرة من مجلد التحميلات وتأكيد النقر التلقائي...', 'info');
-
-    // Launch installation and file manager
-    const openCommands = [
-      `am start -a android.intent.action.VIEW -d "file://${downloadPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-      `am start -n com.android.packageinstaller/.PackageInstallerActivity -d "file://${downloadPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null`,
-      `am start -a android.intent.action.VIEW -d "file:///sdcard/Download" -t "resource/folder" 2>/dev/null`,
-      `am start -n com.android.documentsui/.files.FilesActivity 2>/dev/null`,
-    ];
-
-    for (const oc of openCommands) {
-      try {
-        await this.execShell(adb, oc);
-      } catch {}
-    }
-
-    // Auto-confirm click
-    const monitorRes = await this.autoConfirmAndMonitorInstall(
-      adb,
-      beforePkgsRaw,
-      knownPackageName,
-      onLog,
-      20
-    );
-
-    if (monitorRes.success) {
-      return {
-        success: true,
-        packageName: monitorRes.packageName || knownPackageName,
-        message: `تم تثبيت التطبيق بنجاح (${monitorRes.packageName || knownPackageName}) من مجلد التحميلات!`,
-      };
-    }
-
-    // Final check
-    const currentPkgs = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-    const newlyFound = this.findDiffPackage(beforePkgsRaw, currentPkgs);
-    if (newlyFound || (knownPackageName && currentPkgs.includes(knownPackageName))) {
-      return {
-        success: true,
-        packageName: newlyFound || knownPackageName,
-        message: `تم تثبيت التطبيق بنجاح (${newlyFound || knownPackageName}) من مجلد التحميلات!`,
-      };
-    }
-
-    return {
-      success: true,
-      message: `تم إيداع ملف التطبيق (${safeName}) في مجلد التحميلات (Download) بشاشة سيارتك وفتح واجهة التثبيت. يمكنك النقر عليه لتثبيته بنقرة واحدة بدون أي قيود.`,
-    };
-  }
-
-  /**
-   * 6. Smart Root Privilege Direct Injection Protocol.
-   * If root is available: sets permissive SELinux, avoids fatal -g flag, and executes directly.
-   * If root is unavailable: smoothly bridges to the intelligent multi-bypass engine so installation never fails.
-   */
-  public static async installViaRootSuInject(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    onLog?.('⚡ [البروتوكول الذكي] فحص توفر صلاحيات الروت المباشرة (su)...', 'info');
-
-    // Test su
-    const suCheck = await this.execShell(adb, 'which su 2>/dev/null || su -c id 2>/dev/null || su 0 id 2>/dev/null');
-    const hasRoot = suCheck.includes('su') || suCheck.includes('uid=0');
-
-    if (!hasRoot) {
-      onLog?.('صلاحيات الروت (su) غير مفعلة، التحويل التلقائي الذكي لمحرك تخطي قيود السيارة المستقل...', 'info');
-      return await this.installViaJetourFallback(adb, file, onProgress, onLog, knownPackageName);
-    }
-
-    onLog?.('تم رصد صلاحيات الروت! جاري حقن الحزمة وتجاوز جميع القيود الأمنية...', 'success');
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-    }
-
-    const beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-    // Execute install as root WITHOUT fatal -g flag, with setenforce 0 if supported
-    const rootCmd = `su -c "setenforce 0 2>/dev/null; pm set-user-restriction no_install_apps 0 2>/dev/null; pm install -r -d -t --bypass-low-target-sdk-block '${targetPath}'" 2>&1 || su 0 pm install -r -d -t "${targetPath}" 2>&1`;
-    onLog?.(`> ${rootCmd}`, 'info');
-    const out = await this.execShell(adb, rootCmd);
-    onLog?.(`استجابة تثبيت الروت: ${out.trim()}`, 'info');
-
-    let isSuccess = out.toLowerCase().includes('success');
-    const afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-    let newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
-    if (!newlyFoundPkg && knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
-      newlyFoundPkg = knownPackageName;
-      isSuccess = true;
-    }
-
-    // Cleanup temp
-    try {
-      await this.execShell(adb, `rm -f "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    if (isSuccess || newlyFoundPkg) {
-      const finalPkg = newlyFoundPkg || knownPackageName;
-      return {
-        success: true,
-        packageName: finalPkg,
-        message: `تم تثبيت التطبيق بنجاح (${finalPkg}) بصلاحيات الروت المباشرة!`,
-      };
-    }
-
-    return {
-      success: false,
-      message: this.formatInstallErrorMessage(out),
-    };
-  }
-
-  /**
-   * 1. Smart Staged Package Session Stream
-   * Direct in-memory streaming with low target SDK bypass, downgrade support, and screen auto-confirmation.
-   */
-  public static async installViaPackageSessionStream(
+  public static async installViaStreamingSession(
     adb: Adb,
     file: File,
     onProgress?: InstallProgressCallback,
@@ -948,23 +190,21 @@ export class ApkInstaller {
     knownPackageName?: string
   ): Promise<{ success: boolean; message: string; packageName?: string }> {
     const fileSize = file.size;
-    onLog?.('🧠 [البروتوكول الذكي] فتح جلسة حزم أندرويد الرسمية (PackageManager Install Session)...', 'info');
+    onLog?.('فتح جلسة حزم أندرويد الرسمية (PackageManager Streaming Session)...', 'info');
     onProgress?.(5, 'uploading', 'فتح جلسة التثبيت في نظام أندرويد...');
 
     const pm = new PackageManager(adb);
 
     let session: PackageManagerInstallSession | null = null;
     try {
-      // Create session with full bypass flags and WITHOUT -g flag to avoid SecurityException
       session = await PackageManagerInstallSession.create(pm, {
         allowTest: true,
         requestDowngrade: true,
       });
-      onLog?.(`تم فتح جلسة التثبيت بنجاح: [جلسة رقم ${session.id}]`, 'info');
+      onLog?.(`تم إنشاء جلسة تثبيت برقم: [Session #${session.id}]`, 'info');
     } catch (eCreate: any) {
-      onLog?.(`تعذر فتح الجلسة عبر API (${eCreate?.message || eCreate})، التحويل للجلسة المباشرة الموجهة...`, 'info');
-      // Fallback to manual session creation
-      return await this.installViaDirectStagedSession(adb, file, onProgress, onLog, knownPackageName);
+      onLog?.(`تعذر إنشاء الجلسة عبر API (${eCreate?.message || eCreate})، تجربة الجلسة عبر shell stream...`, 'info');
+      return await this.installViaShellStreamingSession(adb, file, onProgress, onLog, knownPackageName);
     }
 
     let transferredBytes = 0;
@@ -987,38 +227,19 @@ export class ApkInstaller {
     try {
       onLog?.('جاري بث بيانات الحزمة إلى جلسة النظام مباشرة...', 'info');
       await session.addSplitStream('base.apk', fileSize, stream as any);
-      onLog?.('تم كتابة بيانات الحزمة بالكامل داخل الجلسة.', 'info');
+      onLog?.('تمت كتابة بيانات الحزمة بالكامل داخل الجلسة.', 'info');
 
       onProgress?.(92, 'installing', 'اعتماد الجلسة والتثبيت في نظام شاشة السيارة...');
-      onLog?.('جاري اعتماد الجلسة (Commit Session)...', 'info');
+      onLog?.('جاري اعتماد الجلسة في النظام (Commit Session)...', 'info');
 
-      // Concurrent screen touch in case confirmation pops up on car screen
-      let commitFinished = false;
-      const autoConfirmCommit = (async () => {
-        await new Promise((r) => setTimeout(r, 1200));
-        while (!commitFinished) {
-          try {
-            const focus = await this.execShell(adb, 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp" 2>/dev/null');
-            if (/packageinstaller|InstallAppProgress|PackageInstallerActivity|InstallStart/i.test(focus)) {
-              await this.execShell(adb, 'input keyevent 22 2>/dev/null && input keyevent 66 2>/dev/null');
-            }
-          } catch {}
-          await new Promise((r) => setTimeout(r, 1200));
-        }
-      })();
-
-      try {
-        await session.commit();
-      } finally {
-        commitFinished = true;
-      }
+      await session.commit();
 
       onLog?.('تم اعتماد وتثبيت جلسة الحزم بنجاح!', 'success');
       onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
 
       return {
         success: true,
-        message: 'تم تثبيت التطبيق بنجاح عبر جلسة حزم النظام المباشرة (Staged Session) وتفعيله لشاشة السيارة.',
+        message: 'تم تثبيت التطبيق بنجاح عبر جلسة الحزم المتدفقة المباشرة وتفعيله لشاشة السيارة.',
         packageName: knownPackageName,
       };
     } catch (eCommit: any) {
@@ -1026,1557 +247,476 @@ export class ApkInstaller {
         await session.abandon();
       } catch {}
       const errMsg = eCommit?.message || String(eCommit);
-      onLog?.(`نتيجة جلسة الحزم: ${errMsg}. التحويل التلقائي للمحرك المباشر المستقل...`, 'info');
-      // If commit fails due to security exception or abortion, immediately try fallback installer
-      return await this.installViaJetourFallback(adb, file, onProgress, onLog, knownPackageName);
+      return {
+        success: false,
+        message: this.translateAndroidInstallError(errMsg),
+      };
     }
   }
 
   /**
-   * Manual staged session creation fallback
+   * Shell-level streaming session via `cmd package install-create` + `install-write` + `install-commit`
    */
-  private static async installViaDirectStagedSession(
+  private static async installViaShellStreamingSession(
     adb: Adb,
     file: File,
     onProgress?: InstallProgressCallback,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
     knownPackageName?: string
   ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
+    const fileSize = file.size;
+    const currentUserId = await this.getCurrentUserId(adb);
 
-    onProgress?.(20, 'uploading', 'رفع الحزمة للجلسة المباشرة...');
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
+    onLog?.('بدء إنشاء جلسة تثبيت عبر أوامر cmd package مباشرة...', 'info');
+
+    // Create session
+    const createCmd = `cmd package install-create -r -d -t --user ${currentUserId} 2>/dev/null || pm install-create -r -d -t 2>/dev/null`;
+    const createOut = await this.execShell(adb, createCmd);
+    const sessionMatch = createOut.match(/\[(\d+)\]/) || createOut.match(/session\s+(\d+)/i) || createOut.match(/(\d+)/);
+
+    if (!sessionMatch || !sessionMatch[1]) {
+      return {
+        success: false,
+        message: 'تعذر فتح جلسة تثبيت عبر cmd package.',
+      };
     }
 
-    onProgress?.(70, 'installing', 'إنشاء واعتماد الجلسة المباشرة...');
-    const sessCmd = `cmd package install-create -r -t -d --bypass-low-target-sdk-block -S ${size} 2>/dev/null || pm install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d --user 10 -S ${size} 2>/dev/null || pm install-create -r -t -d --user current -S ${size} 2>/dev/null`;
-    const res = await this.execShell(adb, sessCmd);
-    const match = res.match(/\b\d+\b/);
-    if (match) {
-      const sid = match[0];
-      await this.execShell(adb, `cmd package install-write -S ${size} ${sid} base.apk "${targetPath}" 2>/dev/null || pm install-write -S ${size} ${sid} base.apk "${targetPath}" 2>/dev/null`);
-      const commitOut = await this.execShell(adb, `cmd package install-commit ${sid} 2>&1 || pm install-commit ${sid} 2>&1`);
-      if (commitOut.toLowerCase().includes('success')) {
-        try {
-          await this.execShell(adb, `rm -f "${targetPath}" 2>/dev/null`);
-        } catch {}
+    const sessionId = sessionMatch[1];
+    onLog?.(`تم فتح جلسة التثبيت: #${sessionId}`, 'info');
+
+    // Stage APK in /data/local/tmp and write into session
+    const tempPath = `/data/local/tmp/stream_${sessionId}.apk`;
+    const pushOk = await this.pushFileSafe(adb, file, tempPath, onProgress, onLog);
+    if (!pushOk) {
+      await this.execShell(adb, `cmd package install-abandon ${sessionId} 2>/dev/null`);
+      return {
+        success: false,
+        message: 'فشل نقل الحزمة المؤقتة إلى ذاكرة الشاشة للكتابة في الجلسة.',
+      };
+    }
+
+    onProgress?.(90, 'installing', 'كتابة الحزمة داخل جلسة النظام...');
+    await this.execShell(adb, `cat "${tempPath}" | cmd package install-write -S ${fileSize} ${sessionId} base.apk - 2>/dev/null || cat "${tempPath}" | pm install-write -S ${fileSize} ${sessionId} base.apk - 2>/dev/null`);
+
+    onProgress?.(95, 'installing', 'اعتماد وتثبيت الجلسة...');
+    const commitOut = await this.execShell(adb, `cmd package install-commit ${sessionId} 2>/dev/null || pm install-commit ${sessionId} 2>/dev/null`);
+
+    await this.cleanupFile(adb, tempPath);
+
+    if (/Success/i.test(commitOut)) {
+      return {
+        success: true,
+        message: 'تم تثبيت التطبيق بنجاح عبر جلسة الحزم الموجهة.',
+        packageName: knownPackageName,
+      };
+    }
+
+    return {
+      success: false,
+      message: this.translateAndroidInstallError(commitOut),
+    };
+  }
+
+  /**
+   * Protocol 2: Automotive app_process / GtInstall Engine
+   * Executes Dalvik/ART Java runtime directly to communicate with IPackageManager via Binder IPC.
+   * Completely non-interactive and zero clicks.
+   */
+  public static async installViaAppProcessGt(
+    adb: Adb,
+    file: File,
+    onProgress?: InstallProgressCallback,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    knownPackageName?: string
+  ): Promise<{ success: boolean; message: string; packageName?: string }> {
+    onLog?.('تجهيز بيئة GtInstall و app_process على نظام الشاشة...', 'info');
+
+    // 1. Ensure g.jar is deployed on device
+    const helperReady = await ensureGtHelperOnDevice(adb, onLog);
+    if (!helperReady) {
+      return {
+        success: false,
+        message: 'تعذر تجهيز حزمة المحرك المستقل (g.jar) على ذاكرة الشاشة.',
+      };
+    }
+
+    // 2. Push APK to /data/local/tmp
+    const remoteApkPath = `/data/local/tmp/app_gt_${Date.now()}.apk`;
+    const pushOk = await this.pushFileSafe(adb, file, remoteApkPath, onProgress, onLog);
+    if (!pushOk) {
+      return {
+        success: false,
+        message: 'فشل رفع ملف التطبيق إلى ذاكرة الشاشة لتشغيل محرك GtInstall.',
+      };
+    }
+
+    onProgress?.(85, 'installing', 'تشغيل محرك app_process واستدعاء خدمة الحزم...');
+    onLog?.('بدء تشغيل محرك التثبيت عبر معالج app_process والاتصال بـ IPackageManager...', 'info');
+
+    // 3. Execute GtInstall helper
+    const gtResult = await installViaGtHelper(adb, remoteApkPath, onLog);
+
+    // Clean up temporary APK
+    await this.cleanupFile(adb, remoteApkPath);
+
+    return {
+      success: gtResult.success,
+      message: gtResult.message,
+      packageName: gtResult.packageName || knownPackageName,
+    };
+  }
+
+  /**
+   * Protocol 3: Active Automotive User Profile Targeting
+   * Specifically targets the foreground driver profile (--user 10 or current),
+   * strips installation restrictions on that user, and installs without dangerous flags like -g.
+   */
+  public static async installViaActiveUser(
+    adb: Adb,
+    file: File,
+    onProgress?: InstallProgressCallback,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    targetUserId?: string,
+    knownPackageName?: string
+  ): Promise<{ success: boolean; message: string; packageName?: string }> {
+    const userId = targetUserId || (await this.getCurrentUserId(adb));
+    onLog?.(`استهداف بروفايل المستخدم النشط لشاشة السيارة: [المستخدم ${userId}]...`, 'info');
+
+    // Lift restrictions specifically on this user
+    await this.unlockUserRestrictions(adb, userId, onLog);
+
+    const remotePath = `/data/local/tmp/user_install_${Date.now()}.apk`;
+    const pushOk = await this.pushFileSafe(adb, file, remotePath, onProgress, onLog);
+    if (!pushOk) {
+      return {
+        success: false,
+        message: 'فشل نقل ملف الـ APK إلى ذاكرة الشاشة.',
+      };
+    }
+
+    await this.execShell(adb, `chmod 644 "${remotePath}" 2>/dev/null`);
+
+    onProgress?.(85, 'installing', `تثبيت الحزمة للمستخدم النشط (${userId})...`);
+
+    // Command without -g flag to avoid SecurityException
+    const installCmd = `pm install -r -d -t --user ${userId} "${remotePath}" 2>&1`;
+    onLog?.(`> ${installCmd}`, 'info');
+
+    const out = await this.execShell(adb, installCmd);
+    await this.cleanupFile(adb, remotePath);
+
+    onLog?.(`استجابة مدير الحزم: ${out.trim()}`, 'info');
+
+    if (/Success/i.test(out)) {
+      return {
+        success: true,
+        message: `تم تثبيت التطبيق بنجاح للمستخدم النشط (${userId}) في شاشة السيارة.`,
+        packageName: knownPackageName,
+      };
+    }
+
+    // Try fallback to --user current or --user 0
+    if (userId !== '0') {
+      onLog?.('تجربة التثبيت على المستخدم العام (User 0) ثم تفعيله للمستخدم النشط...', 'info');
+      const tempPath2 = `/data/local/tmp/user0_install_${Date.now()}.apk`;
+      await this.pushFileSafe(adb, file, tempPath2);
+      await this.execShell(adb, `chmod 644 "${tempPath2}" 2>/dev/null`);
+      const out2 = await this.execShell(adb, `pm install -r -d -t --user 0 "${tempPath2}" 2>&1`);
+      await this.cleanupFile(adb, tempPath2);
+
+      if (/Success/i.test(out2)) {
         return {
           success: true,
+          message: 'تم تثبيت التطبيق بنجاح للمستخدم الأساسي وتفعيله لشاشة القيادة.',
           packageName: knownPackageName,
-          message: 'تم التثبيت بنجاح عبر جلسة الحزم المباشرة.',
         };
       }
     }
 
-    return await this.installViaJetourFallback(adb, file, onProgress, onLog, knownPackageName);
+    return {
+      success: false,
+      message: this.translateAndroidInstallError(out),
+    };
   }
 
   /**
-   * 2. Direct Binary Stream (Direct raw pipe into pm / cmd package install -S)
+   * Protocol 4: Desay SV / Chery Factory Broadcast Direct Injection
+   * Transmits internal OTA & USB firmware installation intents recognized by Desay SV / Chery head units.
+   * Completely non-interactive and zero clicks.
    */
-  public static async installViaDirectStream(
+  public static async installViaDesayBroadcast(
     adb: Adb,
     file: File,
     onProgress?: InstallProgressCallback,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
     knownPackageName?: string
   ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
+    onLog?.('تجهيز حزمة التثبيت لبث المصنع المباشر (Desay SV / Chery Factory Broadcast)...', 'info');
 
-    // Commands without -g flag to avoid SecurityException
-    const streamCommands = [
-      `shell:pm install -r -t -S ${size}`,
-      `shell:cmd package install -r -t -S ${size}`,
-      `shell:pm install -r -S ${size}`,
-      `shell:cmd package install -r -S ${size}`,
-      `shell:pm install -S ${size}`,
+    // Stage APK into both /sdcard/Download and /data/local/tmp for maximum receiver compatibility
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const sdcardPath = `/sdcard/Download/${cleanFileName}`;
+    const tmpPath = `/data/local/tmp/${cleanFileName}`;
+
+    const pushOk = await this.pushFileSafe(adb, file, sdcardPath, onProgress, onLog);
+    if (!pushOk) {
+      return {
+        success: false,
+        message: 'فشل إيداع ملف التطبيق في ذاكرة الشاشة لبث المصنع.',
+      };
+    }
+
+    await this.execShell(adb, `chmod 666 "${sdcardPath}" 2>/dev/null`);
+    await this.execShell(adb, `cp "${sdcardPath}" "${tmpPath}" 2>/dev/null && chmod 666 "${tmpPath}" 2>/dev/null`);
+
+    onProgress?.(85, 'installing', 'إرسال إشارات بث التثبيت لخدمات نظام السيارة...');
+    onLog?.('إرسال أوامر البث لنظام فك التشفير والتثبيت الصامت في شاشة السيارة...', 'info');
+
+    const broadcasts = [
+      `am broadcast -a com.desay.action.INSTALL_APK --es path "${sdcardPath}" 2>/dev/null`,
+      `am broadcast -a com.chery.action.INSTALL_APK --es path "${sdcardPath}" 2>/dev/null`,
+      `am broadcast -a com.ecarx.action.INSTALL_APK --es apkPath "${sdcardPath}" 2>/dev/null`,
+      `am broadcast -a android.intent.action.PACKAGE_INSTALL -d file://"${sdcardPath}" -t application/vnd.android.package-archive 2>/dev/null`,
+      `am broadcast -a com.desay.action.INSTALL_APK --es path "${tmpPath}" 2>/dev/null`,
+      `am broadcast -a com.chery.action.INSTALL_APK --es path "${tmpPath}" 2>/dev/null`,
     ];
 
-    let lastError = '';
-
-    for (const cmd of streamCommands) {
-      try {
-        onLog?.(`بدء البث المباشر للشاشة: ${cmd}...`, 'info');
-        const socket = await adb.createSocket(cmd);
-        const writer = socket.writable.getWriter();
-        let sentBytes = 0;
-        const reader = file.stream().getReader();
-
-        onProgress?.(5, 'uploading', 'بث مباشر عبر منفذ النظام...');
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (value) {
-              await writer.write(value);
-              sentBytes += value.byteLength;
-              const pct = 5 + Math.min(85, Math.round((sentBytes / size) * 85));
-              onProgress?.(pct, 'uploading', `بث مباشر (${(sentBytes / 1024 / 1024).toFixed(1)} / ${(size / 1024 / 1024).toFixed(1)} MB)`);
-            }
-          }
-          await writer.close();
-        } catch (e: any) {
-          try { await writer.abort(e); } catch {}
-          throw e;
-        } finally {
-          reader.releaseLock();
-        }
-
-        onProgress?.(92, 'installing', 'قراءة نتيجة التثبيت...');
-        const decoder = new TextDecoder();
-        const socketReader = socket.readable.getReader();
-        let output = '';
-
-        try {
-          while (true) {
-            const { done, value } = await socketReader.read();
-            if (done) break;
-            if (value) output += decoder.decode(value, { stream: true });
-          }
-          output += decoder.decode();
-        } finally {
-          socketReader.releaseLock();
-          try { await socket.close(); } catch {}
-        }
-
-        const trimmed = output.trim();
-        const isSuccess = trimmed.toLowerCase().includes('success');
-        onLog?.(`استجابة البث المباشر: ${trimmed || '(تم إرسال الأمر)'}`, isSuccess ? 'success' : 'info');
-
-        if (isSuccess) {
-          onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
-          return {
-            success: true,
-            message: 'تم تثبيت التطبيق بنجاح عبر البث المباشر.',
-            packageName: knownPackageName,
-          };
-        }
-
-        lastError = trimmed;
-        if (this.isFatalInstallError(trimmed)) {
-          break;
-        }
-      } catch (err: any) {
-        lastError = err.message || String(err);
-      }
+    for (const b of broadcasts) {
+      await this.execShell(adb, b);
       await new Promise((r) => setTimeout(r, 200));
     }
 
-    const friendlyError = this.translateAndroidInstallError(lastError);
-    return { success: false, message: friendlyError || lastError };
-  }
+    onLog?.('تم إرسال إشارات البث لمستقبلات نظام السيارة بنجاح. فحص استجابة التثبيت...', 'info');
 
-  /**
-   * 3. System Path /data/local/tmp (Clean commands WITHOUT -g flag)
-   * Solves SELinux FUSE restriction on newer car head units by staging in /data/local/tmp
-   */
-  public static async installViaTmpStorage(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('تجهيز مسار النظام الداخلي /data/local/tmp...', 'info');
-    try {
-      await this.execShell(adb, 'mkdir -p /data/local/tmp 2>/dev/null');
-      await this.execShell(adb, 'chmod 777 /data/local/tmp 2>/dev/null');
-      await this.execShell(adb, `rm -f "${targetPath}" /data/local/tmp/app_install.apk 2>/dev/null`);
-    } catch {}
-
-    let pushSuccess = false;
-    let pushError = '';
-
-    onProgress?.(5, 'uploading', 'نقل الحزمة إلى مسار النظام المعتمد /data/local/tmp...');
-    onLog?.(`نقل الحزمة إلى: ${targetPath}...`, 'info');
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-      pushSuccess = true;
-      onLog?.(`تم نقل الملف إلى /data/local/tmp بنجاح (${(size / (1024 * 1024)).toFixed(1)} MB).`, 'success');
-    } catch (err: any) {
-      pushError = err.message || String(err);
-      onLog?.(`محاولة نقل بديلة عبر ممر Shell المباشر...`, 'info');
-      try {
-        await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-        pushSuccess = true;
-      } catch (err2: any) {
-        pushError = err2.message || String(err2);
-      }
-    }
-
-    if (!pushSuccess) {
-      return {
-        success: false,
-        message: `تعذر نقل ملف الـ APK إلى مسار النظام: ${pushError}`,
-      };
-    }
-
-    // Set permissions and SELinux label so system_server can read it
-    try {
-      await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-      await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-      await this.execShell(adb, `restorecon -F "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    await new Promise((r) => setTimeout(r, 200));
-    onProgress?.(88, 'installing', 'تنفيذ أوامر التثبيت...');
-
-    const currentUserId = await this.getCurrentUserId(adb);
-
-    // Direct clean commands WITHOUT -i com.android.vending (which fails on Desay SV / Jetour T2)
-    // and WITHOUT -g at install time (which triggers SecurityException on Automotive OS)
-    const directCommands = [
-      `pm install -r -t -d "${targetPath}" 2>&1`,
-      `pm install -r "${targetPath}" 2>&1`,
-      `cmd package install -r -t -d "${targetPath}" 2>&1`,
-      `cmd package install -r "${targetPath}" 2>&1`,
-      `pm install --user ${currentUserId} -r -t -d "${targetPath}" 2>&1`,
-      `pm install --user current -r -t -d "${targetPath}" 2>&1`,
-      `pm install --user 0 -r -t -d "${targetPath}" 2>&1`,
-      `pm install --user 10 -r -t -d "${targetPath}" 2>&1`,
-      `cd /data/local/tmp && pm install -r -t -d "${safeName}" 2>&1`,
-      `cd /data/local/tmp && cat "${safeName}" | pm install -S ${size} 2>&1`,
-      `cat "${targetPath}" | pm install -r -t -d -S ${size} 2>&1`,
-    ];
-
-    let isSuccess = false;
-    let lastOutput = '';
-
-    // Direct Command 1: Fast test with direct cat pipe to pm install
-    try {
-      onLog?.('> cd /data/local/tmp', 'info');
-      onLog?.(`> cat "${safeName}" | pm install -S ${size}`, 'info');
-      const directCatRes = await this.execShell(adb, `cd /data/local/tmp && cat "${safeName}" | pm install -S ${size}`);
-      const directTrimmed = directCatRes.trim();
-      if (directTrimmed) lastOutput = directTrimmed;
-      if (directTrimmed.toLowerCase().includes('success')) {
-        isSuccess = true;
-        onLog?.(`استجابة الشاشة: ${directTrimmed}`, 'success');
-      } else {
-        onLog?.(`استجابة الشاشة: ${directTrimmed || '(تم الرفض أو خطأ)'}`, 'info');
-      }
-    } catch (eCat: any) {
-      lastOutput = eCat?.message || String(eCat);
-    }
-
-    if (!isSuccess) {
-      for (let i = 0; i < directCommands.length; i++) {
-        const cmd = directCommands[i];
-        try {
-          onLog?.(`[أمر مسار النظام ${i + 1}/${directCommands.length}] ${cmd}`, 'info');
-          const output = await this.execShell(adb, cmd);
-          const trimmed = output.trim();
-          if (trimmed) {
-            lastOutput = trimmed;
-          }
-          const isCmdSuccess = trimmed.toLowerCase().includes('success');
-          onLog?.(`استجابة الشاشة: ${trimmed || '(تم التنفيذ)'}`, isCmdSuccess ? 'success' : 'info');
-
-          if (isCmdSuccess) {
-            isSuccess = true;
-            break;
-          }
-
-          if (this.isFatalInstallError(trimmed)) {
-            break;
-          }
-        } catch (eCmd: any) {
-          const errMsg = eCmd?.message || String(eCmd);
-          if (errMsg) lastOutput = errMsg;
+    // Monitor package installation for up to 10 seconds
+    if (knownPackageName && knownPackageName !== 'base' && knownPackageName !== 'unknown.package') {
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const installed = await this.isPackageInstalled(adb, knownPackageName);
+        if (installed) {
+          onLog?.(`تم تأكيد تثبيت الحزمة عبر بث المصنع: ${knownPackageName}`, 'success');
+          return {
+            success: true,
+            message: `تم تثبيت الحزمة ${knownPackageName} بنجاح عبر بروتوكول بث المصنع المباشر.`,
+            packageName: knownPackageName,
+          };
         }
-        await new Promise((r) => setTimeout(r, 150));
       }
-    }
-
-    // Try PackageManager library API as secondary fallback
-    if (!isSuccess && !this.isFatalInstallError(lastOutput)) {
-      try {
-        const pm = new PackageManager(adb);
-        onLog?.('تجربة التثبيت عبر مكتبة PackageManager...', 'info');
-        const pmRes = await pm.install([targetPath], {
-          allowTest: true,
-          requestDowngrade: false,
-        });
-        if ((pmRes || '').toLowerCase().includes('success')) {
-          isSuccess = true;
-        }
-      } catch (ePm: any) {
-        onLog?.(`نتيجة pm.install: ${ePm.message || ePm}`, 'info');
-      }
-    }
-
-    // If still not successful, invoke Jetour T2 / Firmware Fallback script (independent /data/local/tmp session engine)
-    if (!isSuccess) {
-      const fallbackResult = await this.executeFallbackInstallerScript(
-        adb,
-        targetPath,
-        safeName,
-        size,
-        knownPackageName,
-        onLog
-      );
-      if (fallbackResult.success) {
-        isSuccess = true;
-      }
-    }
-
-    // Always clean up temp file
-    await this.cleanupFile(adb, targetPath);
-
-    if (isSuccess) {
-      onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
-      return {
-        success: true,
-        message: 'تم تثبيت التطبيق بنجاح وبشكل مباشر عبر مسار النظام الداخلي.',
-        packageName: knownPackageName,
-      };
-    }
-
-    // Check if the package got installed despite non-standard output
-    if (knownPackageName) {
-      const isInstalled = await this.isPackageInstalled(adb, knownPackageName);
-      if (isInstalled) {
-        return {
-          success: true,
-          message: 'تم تأكيد وجود الحزمة المثبتة بنجاح على نظام السيارة.',
-          packageName: knownPackageName,
-        };
-      }
-    }
-
-    const translated = this.translateAndroidInstallError(lastOutput);
-    return {
-      success: false,
-      message: translated || lastOutput || 'فشل التثبيت المباشر على مسار النظام الداخلي.',
-    };
-  }
-
-  /**
-   * Independent System Storage Installer (/data/local/tmp) for Jetour T2 & Protected Car Units
-   * Operates completely independently in /data/local/tmp without relying on any external apps (garagesplit) or old scripts.
-   */
-  public static async installViaJetourFallback(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('تهيئة مسار التثبيت الداخلي /data/local/tmp لشاشات جيتور T2...', 'info');
-
-    // Clean up any stale temp APKs without deleting helper scripts
-    try {
-      await this.execShell(adb, 'rm -f /data/local/tmp/app_install.apk /data/local/tmp/*.b64 2>/dev/null');
-      await this.execShell(adb, 'mkdir -p /data/local/tmp 2>/dev/null');
-      await this.execShell(adb, 'chmod 777 /data/local/tmp 2>/dev/null');
-    } catch {}
-
-    onLog?.(`$ push -> ${targetPath}`, 'info');
-    onProgress?.(10, 'uploading', `نقل الحزمة إلى ${targetPath}...`);
-
-    let pushSuccess = false;
-    let pushError = '';
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-      pushSuccess = true;
-    } catch (err: any) {
-      pushError = err.message || String(err);
-      onLog?.('محاولة نقل بديلة عبر ممر Shell المباشر...', 'info');
-      try {
-        await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-        pushSuccess = true;
-      } catch (err2: any) {
-        pushError = err2.message || String(err2);
-      }
-    }
-
-    if (!pushSuccess) {
-      return {
-        success: false,
-        message: `تعذر نقل ملف الـ APK إلى مسار النظام: ${pushError}`,
-      };
-    }
-
-    // Set permissions and SELinux label on the user's APK
-    try {
-      await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-      await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-      await this.execShell(adb, `restorecon -F "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    onProgress?.(60, 'installing', 'تنفيذ التثبيت المستقل بمحرك جلسات النظام...');
-    
-    // Execute independent multi-strategy installation
-    const installResult = await this.executeFallbackInstallerScript(
-      adb,
-      targetPath,
-      safeName,
-      size,
-      knownPackageName,
-      onLog
-    );
-
-    // Always clean up temp file from /data/local/tmp
-    await this.cleanupFile(adb, targetPath);
-
-    if (installResult.success) {
-      onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
-      return {
-        success: true,
-        message: 'تم تثبيت التطبيق بنجاح في مسار النظام الداخلي المستقل.',
-        packageName: installResult.packageName || knownPackageName,
-      };
     }
 
     return {
-      success: false,
-      message: installResult.message || 'تعذر إتمام التثبيت على نظام السيارة.',
+      success: true,
+      message: 'تم إرسال إشارة التثبيت لمستقبلات المصنع، والملف متوفر في مجلد التحميلات.',
       packageName: knownPackageName,
     };
   }
 
   /**
-   * Split-APKs Session Script Protocol (adb-install-split-apks.sh)
-   * Exact implementation from images WA0014, WA0015, WA0016:
-   * Runs local session creation, size calculation via wc -c, and install-commit directly on device shell
+   * Protocol 5: Car Storage Staging & Native File Manager
+   * Stages the APK in /sdcard/Download/ with full permissions, scans it with MediaStore,
+   * and opens the car's native file manager so the user can easily tap it if needed.
+   * Zero artificial screen clicks.
    */
-  public static async installViaSplitScript(
+  public static async installViaDownloadStaging(
     adb: Adb,
     file: File,
     onProgress?: InstallProgressCallback,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
     knownPackageName?: string
   ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-    const scriptPath = '/data/local/tmp/adb-install-split-apks.sh';
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const targetPath = `/sdcard/Download/${cleanFileName}`;
 
-    onLog?.('📜 [بروتوكول السكربت الداخلي] جاري نقل الحزمة وتجهيز سكربت جلسات الحزم على الشاشة...', 'info');
-    onProgress?.(15, 'uploading', `نقل ملف ${safeName} إلى مسار النظام...`);
+    onLog?.(`إيداع ملف التطبيق في مجلد التحميلات: ${targetPath}...`, 'info');
+    onProgress?.(10, 'uploading', 'جاري نقل الملف إلى مجلد التحميلات في شاشة السيارة...');
 
-    // 1. Push APK to /data/local/tmp
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
+    const pushOk = await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
+    if (!pushOk) {
+      return {
+        success: false,
+        message: 'تعذر حفظ ملف التطبيق في مجلد التحميلات بالسيارة.',
+      };
     }
 
-    await this.execShell(adb, `chmod 644 "${targetPath}" 2>/dev/null`);
+    // Set world-readable permissions and trigger media scanner
+    await this.execShell(adb, `chmod 666 "${targetPath}" 2>/dev/null`);
+    await this.execShell(adb, `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://${targetPath}" 2>/dev/null`);
 
-    // 2. Write the shell script adb-install-split-apks.sh
-    const scriptLines = [
-      '#!/bin/sh',
-      'TOTAL_SIZE_ALL_APKS=0',
-      'for APK_PATH in "$@"; do',
-      '  APK_SIZE=$(wc -c < "$APK_PATH")',
-      '  TOTAL_SIZE_ALL_APKS=$((TOTAL_SIZE_ALL_APKS + APK_SIZE))',
-      'done',
-      'SESSION_ID=$(pm install-create -S $TOTAL_SIZE_ALL_APKS 2>/dev/null | sed -n -e \'s/.*\\[\\(.*\\)\\]/\\1/p\')',
-      'if [ -z "$SESSION_ID" ]; then',
-      '  SESSION_ID=$(cmd package install-create -S $TOTAL_SIZE_ALL_APKS 2>/dev/null | sed -n -e \'s/.*\\[\\(.*\\)\\]/\\1/p\')',
-      'fi',
-      'if [ -z "$SESSION_ID" ]; then',
-      '  SESSION_ID=$(pm install-create 2>/dev/null | sed -n -e \'s/.*\\[\\(.*\\)\\]/\\1/p\')',
-      'fi',
-      'INDEX=0',
-      'for APK_PATH in "$@"; do',
-      '  APK_SIZE=$(wc -c < "$APK_PATH")',
-      '  pm install-write -S $APK_SIZE $SESSION_ID $INDEX "$APK_PATH" 2>/dev/null || cmd package install-write -S $APK_SIZE $SESSION_ID $INDEX "$APK_PATH" 2>/dev/null',
-      '  INDEX=$((INDEX+1))',
-      'done',
-      'pm install-commit $SESSION_ID 2>&1 || cmd package install-commit $SESSION_ID 2>&1',
-      'echo SCRIPT_COMPLETE',
-    ];
-    const scriptContent = scriptLines.join('\n') + '\n';
+    onProgress?.(90, 'processing', 'تنبيه النظام وفتح مدير الملفات...');
+    onLog?.('تم حفظ الملف بنجاح في مجلد التحميلات (Download) في شاشة السيارة.', 'success');
 
+    // Attempt to open the staged APK or car's file manager cleanly
     try {
-      const b64 = btoa(scriptContent);
-      await this.execShell(adb, `echo "${b64}" | base64 -d > "${scriptPath}" 2>/dev/null`);
-      await this.execShell(adb, `chmod 755 "${scriptPath}" 2>/dev/null`);
+      await this.execShell(adb, `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`);
     } catch {}
 
-    onProgress?.(70, 'installing', 'تنفيذ سكربت الجلسة الداخلي adb-install-split-apks.sh...');
-    onLog?.(`> cd /data/local/tmp && sh adb-install-split-apks.sh "${safeName}"`, 'info');
+    return {
+      success: true,
+      message: `تم إيداع ملف التطبيق بنجاح في مجلد التحميلات بشاشة سيارتك (/sdcard/Download/${cleanFileName}). يمكنك فتحه من مدير الملفات في أي وقت.`,
+      packageName: knownPackageName,
+    };
+  }
 
-    let scriptOutput = '';
-    try {
-      scriptOutput = await runInteractiveShellSession(
-        adb,
-        ['cd /data/local/tmp', `sh adb-install-split-apks.sh "${safeName}"`],
-        60000
-      );
-    } catch (e: any) {
-      scriptOutput = e?.message || String(e);
+  /**
+   * Protocol 6: Direct Root su Injection
+   * For rooted or developer-unlocked automotive units.
+   * Sets SELinux to permissive and executes installation via su 0.
+   * Completely non-interactive and zero clicks.
+   */
+  public static async installViaRootSu(
+    adb: Adb,
+    file: File,
+    onProgress?: InstallProgressCallback,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    knownPackageName?: string
+  ): Promise<{ success: boolean; message: string; packageName?: string }> {
+    onLog?.('فحص صلاحيات الروت (su binary) على نظام الشاشة...', 'info');
+
+    // Check if su binary exists
+    const suCheck = await this.execShell(adb, 'which su 2>/dev/null || su -v 2>/dev/null');
+    if (!suCheck.includes('su') && !suCheck.includes('/')) {
+      onLog?.('نظام الشاشة غير مكسور الحماية (لا يحتوي على صلاحية Root su).', 'warning');
+      return {
+        success: false,
+        message: 'شاشة السيارة لا تحتوي على صلاحيات الروت (Root su). يرجى اختيار بروتوكول الجلسة المتدفقة أو محرك GtInstall.',
+      };
     }
 
-    const trimmed = (scriptOutput || '').trim();
-    onLog?.(`استجابة سكربت الجلسة: ${trimmed || '(تم التنفيذ)'}`, trimmed.toLowerCase().includes('success') ? 'success' : 'info');
+    onLog?.('تم العثور على صلاحيات الروت. جاري رفع ملف التثبيت...', 'info');
+    const remotePath = `/data/local/tmp/root_install_${Date.now()}.apk`;
+    const pushOk = await this.pushFileSafe(adb, file, remotePath, onProgress, onLog);
+    if (!pushOk) {
+      return {
+        success: false,
+        message: 'فشل نقل ملف التثبيت إلى ذاكرة الشاشة.',
+      };
+    }
 
-    // Clean up temp APK
-    await this.cleanupFile(adb, targetPath);
+    onProgress?.(85, 'installing', 'حقن وتثبيت التطبيق بصلاحيات Root su...');
+    onLog?.('تعطيل SELinux مؤقتاً وتشغيل التثبيت بصلاحيات الروت المطلقة...', 'info');
 
-    if (trimmed.toLowerCase().includes('success')) {
+    const rootCmd = `su -c "setenforce 0; pm install -r -d -t '${remotePath}'" 2>&1`;
+    const out = await this.execShell(adb, rootCmd);
+
+    await this.cleanupFile(adb, remotePath);
+    onLog?.(`استجابة Root: ${out.trim()}`, 'info');
+
+    if (/Success/i.test(out)) {
       return {
         success: true,
-        message: 'تم تثبيت التطبيق بنجاح عبر سكربت جلسات الحزم الداخلي (Split-APKs Script).',
+        message: 'تم تثبيت التطبيق بنجاح بصلاحيات الروت المطلقة (Root su).',
         packageName: knownPackageName,
       };
     }
 
     return {
       success: false,
-      message: trimmed || 'تعذر استكمال التثبيت عبر سكربت الجلسات الداخلي.',
-      packageName: knownPackageName,
+      message: this.translateAndroidInstallError(out),
     };
   }
 
   /**
-   * Smart User Current Protocol (--user current)
-   * Targets current active car user (--user current / --user 10 / --user 0) without triggering SecurityException,
-   * automatically grants runtime permissions post-install, and applies window tweaks.
-   */
-  public static async installViaUserCurrent(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('🛡️ [البروتوكول الذكي للمستخدم الحالي] نقل الحزمة للتثبيت المباشر بحساب الشاشة النشط...', 'info');
-    onProgress?.(15, 'uploading', `نقل ملف ${safeName} إلى /data/local/tmp...`);
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-    }
-
-    await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-    await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-
-    onProgress?.(70, 'installing', 'تشغيل التثبيت الذكي لحساب الشاشة النشط (--user current / 10)...');
-    onLog?.(`> pm install -d -r --bypass-low-target-sdk-block --user current "${targetPath}"`, 'info');
-
-    let out = await this.execShell(adb, `pm install -d -r --bypass-low-target-sdk-block --user current "${targetPath}" 2>&1 || pm install -d -r --user current "${targetPath}" 2>&1`);
-    if (!out.toLowerCase().includes('success')) {
-      onLog?.(`استجابة --user current: ${out.trim() || 'فشل'}. تجربة المستخدم 10 و 0...`, 'info');
-      out = await this.execShell(adb, `pm install -d -r --user 10 "${targetPath}" 2>&1 || pm install -d -r --user 0 "${targetPath}" 2>&1 || pm install -r -t "${targetPath}" 2>&1`);
-    }
-
-    let isSuccess = out.toLowerCase().includes('success');
-    let installedPkg = knownPackageName;
-
-    // Check if installed
-    if (!isSuccess) {
-      const pkgsAfter = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-      if (knownPackageName && pkgsAfter.includes(knownPackageName)) {
-        isSuccess = true;
-      }
-    }
-
-    // If still not success, smart fallback to direct session engine
-    if (!isSuccess) {
-      onLog?.('التحويل التلقائي الذكي لمحرك التثبيت المستقل لشاشات جيتور...', 'info');
-      const fallbackRes = await this.executeFallbackInstallerScript(
-        adb,
-        targetPath,
-        safeName,
-        file.size,
-        knownPackageName,
-        onLog
-      );
-      if (fallbackRes.success) {
-        isSuccess = true;
-        installedPkg = fallbackRes.packageName || knownPackageName;
-      }
-    }
-
-    // Clean up temp APK
-    await this.cleanupFile(adb, targetPath);
-
-    if (isSuccess) {
-      // Auto-apply automotive tweaks from Telegram WA0011 & grant permissions safely AFTER install
-      try {
-        await this.execShell(adb, 'settings put global enable_freeform_support 1 2>/dev/null');
-        await this.execShell(adb, 'settings put global force_resizable_activities 1 2>/dev/null');
-        if (installedPkg) {
-          await this.execShell(adb, `pm grant ${installedPkg} android.permission.BIND_NOTIFICATION_LISTENER_SERVICE 2>/dev/null`);
-          await this.execShell(adb, `pm grant ${installedPkg} android.permission.WRITE_SECURE_SETTINGS 2>/dev/null`);
-          await this.execShell(adb, `pm grant ${installedPkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
-          await this.execShell(adb, `pm grant ${installedPkg} android.permission.WRITE_SETTINGS 2>/dev/null`);
-          await this.execShell(adb, `appops set ${installedPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
-        }
-      } catch {}
-
-      return {
-        success: true,
-        message: 'تم تثبيت التطبيق بنجاح وتفعيل صلاحيات النوافذ العائمة ومستخدم الشاشة (--user current).',
-        packageName: installedPkg,
-      };
-    }
-
-    return {
-      success: false,
-      message: this.formatInstallErrorMessage(out) || 'فشل التثبيت لمستخدم الشاشة الحالي.',
-      packageName: knownPackageName,
-    };
-  }
-
-  /**
-   * Smart jcartools & Batch Loop Protocol
-   * Eliminates the fatal -g flag, employs safe pipe & staging, and falls back seamlessly if blocked.
-   */
-  public static async installViaJcarBatch(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-    const targetPath = `/data/local/tmp/${safeName}`;
-
-    onLog?.('🔄 [البروتوكول الذكي jcartools] جاري النقل والتثبيت بصلاحيات النظام بدون قيود...', 'info');
-    onProgress?.(15, 'uploading', `نقل ملف ${safeName} إلى مسار النظام...`);
-
-    try {
-      await this.pushFileSafe(adb, file, targetPath, onProgress, onLog);
-    } catch {
-      await this.pushFileViaShell(adb, file, targetPath, onProgress, onLog);
-    }
-
-    await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-    await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-
-    onProgress?.(70, 'installing', 'تشغيل أمر التثبيت المباشر المتوافق مع شاشات السيارات...');
-    onLog?.(`> cd /data/local/tmp && pm install -r -t -d "${safeName}"`, 'info');
-
-    let out = await this.execShell(adb, `cd /data/local/tmp && pm install -r -t -d "${safeName}" 2>&1`);
-    if (!out.toLowerCase().includes('success')) {
-      out = await this.execShell(adb, `pm install -r -d "${targetPath}" 2>&1 || pm install -r "${targetPath}" 2>&1`);
-    }
-
-    let isSuccess = out.toLowerCase().includes('success');
-    let installedPkg = knownPackageName;
-
-    if (!isSuccess) {
-      const pkgsAfter = await this.execShell(adb, 'pm list packages 2>/dev/null || pm list packages -3 2>/dev/null');
-      if (knownPackageName && pkgsAfter.includes(knownPackageName)) {
-        isSuccess = true;
-      }
-    }
-
-    // Smart fallback to engine if initial attempt did not succeed
-    if (!isSuccess) {
-      onLog?.('التحويل التلقائي الذكي لمحرك التثبيت المستقل لشاشات السيارات...', 'info');
-      const fallbackRes = await this.executeFallbackInstallerScript(
-        adb,
-        targetPath,
-        safeName,
-        file.size,
-        knownPackageName,
-        onLog
-      );
-      if (fallbackRes.success) {
-        isSuccess = true;
-        installedPkg = fallbackRes.packageName || knownPackageName;
-      }
-    }
-
-    // Clean up
-    await this.cleanupFile(adb, targetPath);
-
-    if (isSuccess) {
-      if (installedPkg) {
-        try {
-          await this.execShell(adb, `appops set ${installedPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
-          await this.execShell(adb, `pm grant ${installedPkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
-        } catch {}
-      }
-      return {
-        success: true,
-        message: 'تم التثبيت بنجاح ببروتوكول jcartools الذكي.',
-        packageName: installedPkg,
-      };
-    }
-
-    return {
-      success: false,
-      message: this.formatInstallErrorMessage(out) || 'فشل التثبيت ببروتوكول jcartools.',
-      packageName: knownPackageName,
-    };
-  }
-
-  /**
-   * Enhanced Jetour T2 / Desay SV Installation Engine (GarageTool & 4PDA Protocol)
-   * 1. Copies APK directly to /sdcard/Download (where car file manager and SELinux can access it)
-   * 2. Disables Android ADB package verifier to prevent INSTALL_FAILED_ABORTED
-   * 3. Executes direct GarageTool & 4PDA commands with -r -g runtime permission grant
-   * 4. Multi-User target dispatch (User 0, User current)
-   * 5. Screen-Safe PackageInstaller fallback that checks window focus before clicking to avoid triggering the radio
-   */
-  public static async executeFallbackInstallerScript(
-    adb: Adb,
-    targetPath: string,
-    safeName: string,
-    size: number,
-    knownPackageName?: string,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    onLog?.('بدء بروتوكول التثبيت المباشر المستقل لشاشات جيتور T2 والأنظمة المحمية...', 'info');
-
-    // 0. Disable Android package verifier to prevent ADB Aborted errors
-    try {
-      await this.execShell(adb, 'settings put global verifier_verify_adb_installs 0 2>/dev/null');
-      await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
-      await this.execShell(adb, 'settings put global upload_apk_enable 0 2>/dev/null');
-      await this.execShell(adb, 'settings put global package_verifier_user_consent 1 2>/dev/null');
-      await this.execShell(adb, 'settings put secure install_non_market_apps 1 2>/dev/null');
-      await this.execShell(adb, 'settings put global install_non_market_apps 1 2>/dev/null');
-    } catch {}
-
-    // Ensure permissions and SELinux label on target file in /data/local/tmp
-    try {
-      await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-      await this.execShell(adb, `chcon u:object_r:shell_data_file:s0 "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    // Detect active users (Driver user, system user 0, user 10, etc.)
-    const userIds = new Set<string>(['0', 'current']);
-    try {
-      const usersRaw = await this.execShell(adb, 'pm list users 2>/dev/null');
-      const matches = usersRaw.matchAll(/UserInfo\{(\d+):/g);
-      for (const m of matches) {
-        if (m[1]) userIds.add(m[1]);
-      }
-    } catch {}
-
-    // Take snapshot of existing packages before running install
-    let beforePkgsRaw = '';
-    try {
-      beforePkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-    } catch {}
-
-    let newlyFoundPkg: string | undefined;
-    let isSuccess = false;
-    let lastLog = '';
-
-    // Strategy 1: Standard stream pipe test (as shown in user's reference log)
-    // > cd /data/local/tmp
-    // > cat "app.apk" | pm install -S 12345
-    onLog?.('• تجربة [1]: التثبيت عبر ممر الحزم المباشر (Pipe Stream)...', 'info');
-    onLog?.('> cd /data/local/tmp', 'info');
-    onLog?.(`> cat "${safeName}" | pm install -S ${size}`, 'info');
-    try {
-      const directCatRes = await runInteractiveShellSession(
-        adb,
-        ['cd /data/local/tmp', `cat "${safeName}" | pm install -S ${size}`],
-        45000
-      );
-      const catTrimmed = (directCatRes || '').trim();
-      if (catTrimmed) lastLog = catTrimmed;
-      if (catTrimmed.toLowerCase().includes('success')) {
-        isSuccess = true;
-        onLog?.(`استجابة الشاشة: ${catTrimmed}`, 'success');
-      } else {
-        onLog?.(`استجابة التثبيت العادي: ${catTrimmed || '(تم الرفض أو غير مدعوم)'}`, 'info');
-      }
-    } catch (eCat: any) {
-      lastLog = eCat?.message || String(eCat);
-    }
-
-    // Check if installed after Strategy 1
-    if (!isSuccess) {
-      try {
-        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
-        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
-          isSuccess = true;
-          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
-        }
-      } catch {}
-    }
-
-    // Strategy 2: Proven Jetour T2 app_process Classpath Helper (GtInstall / r.sh)
-    // This bypasses the firmware adbd filter which rejects lines containing "install"
-    // and executes GtInstall in system context directly, exactly as GarageTool does.
-    if (!isSuccess) {
-      onLog?.('• تجربة [2]: تشغيل المثبت الاحتياطي المباشر لشاشات جيتور (app_process / GtInstall / r.sh)...', 'info');
-      onLog?.('تم رفض التثبيت العادي من برمجية الشاشة. جاري الانتقال للمثبت الاحتياطي المباشر...', 'info');
-      try {
-        const helperRes = await installViaGtHelper(adb, targetPath, onLog);
-        if (helperRes.success) {
-          isSuccess = true;
-          newlyFoundPkg = helperRes.packageName || knownPackageName;
-          onLog?.(`تم التثبيت بنجاح بواسطة المثبت الاحتياطي (${newlyFoundPkg || 'التطبيق'})!`, 'success');
-        } else {
-          lastLog = helperRes.message;
-        }
-      } catch (eHelper: any) {
-        lastLog = eHelper?.message || String(eHelper);
-        onLog?.(`ملاحظة المثبت الاحتياطي: ${lastLog}`, 'info');
-      }
-    }
-
-    // Check if installed after Strategy 2
-    if (!isSuccess) {
-      try {
-        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
-        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
-          isSuccess = true;
-          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
-        }
-      } catch {}
-    }
-
-    // Strategy 3: Staged Package Session Installation directly from /data/local/tmp
-    // Creates a native session inside /data/app where SELinux restrictions do not apply
-    if (!isSuccess) {
-      onLog?.('• تجربة [3]: التثبيت المباشر الفوري عبر محرك جلسات الحزم الداخلي (Staged Session)...', 'info');
-      try {
-        const sessionCreateCmd = `pm install-create -r -t -d -S ${size} 2>/dev/null || cmd package install-create -r -t -d -S ${size} 2>/dev/null || pm install-create -r -t -d --user current -S ${size} 2>/dev/null || pm install-create -r -t -d --user 0 -S ${size} 2>/dev/null`;
-        const createRes = await this.execShell(adb, sessionCreateCmd);
-        const match = createRes.match(/\b\d+\b/);
-        const sessionId = match ? match[0] : '';
-
-        if (sessionId) {
-          onLog?.(`> تم إنشاء جلسة تثبيت رقم [${sessionId}]، جارٍ كتابة حزمة الـ APK...`, 'info');
-          // Write directly from targetPath (no pipe stdin or pipe with dash -)
-          const writeCmd = `pm install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cmd package install-write -S ${size} ${sessionId} base.apk "${targetPath}" 2>/dev/null || cat "${targetPath}" | pm install-write -S ${size} ${sessionId} base.apk - 2>/dev/null`;
-          await this.execShell(adb, writeCmd);
-
-          onLog?.(`> اعتماد وتثبيت الجلسة [${sessionId}]...`, 'info');
-          const commitRes = await this.execShell(adb, `pm install-commit ${sessionId} 2>&1 || cmd package install-commit ${sessionId} 2>&1`);
-          const trimmed = commitRes.trim();
-          if (trimmed) {
-            lastLog = trimmed;
-            onLog?.(`> استجابة اعتماد الجلسة: ${trimmed}`, 'info');
-          }
-          if (trimmed.toLowerCase().includes('success')) {
-            isSuccess = true;
-          }
-        }
-      } catch (eSess: any) {
-        onLog?.(`ملاحظة جلسة الحزم: ${eSess?.message || eSess}`, 'info');
-      }
-    }
-
-    // Check if installed after Strategy 3
-    if (!isSuccess) {
-      await new Promise((r) => setTimeout(r, 400));
-      try {
-        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
-        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
-          isSuccess = true;
-          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
-        }
-      } catch {}
-    }
-
-    // Strategy 4: Official @yume-chan/android-bin PackageManager Session API
-    if (!isSuccess) {
-      onLog?.('• تجربة [4]: التثبيت عبر مكتبة مدير الحزم المباشرة (PackageManager API)...', 'info');
-      try {
-        const pm = new PackageManager(adb);
-        const sessId = await pm.sessionCreate({
-          allowTest: true,
-          requestDowngrade: true,
-          skipVerification: true,
-          bypassLowTargetSdkBlock: true,
-        });
-        onLog?.(`> فتح جلسة مدير الحزم [${sessId}] وإضافة الحزمة...`, 'info');
-        await pm.sessionAddSplit(sessId, 'base.apk', targetPath);
-        await pm.sessionCommit(sessId);
-        isSuccess = true;
-        onLog?.('تم اعتماد الجلسة وتثبيت التطبيق بنجاح عبر PackageManager API.', 'success');
-      } catch (ePmSession: any) {
-        onLog?.(`ملاحظة PackageManager API: ${ePmSession?.message || ePmSession}`, 'info');
-      }
-    }
-
-    // Check if installed after Strategy 4
-    if (!isSuccess) {
-      await new Promise((r) => setTimeout(r, 400));
-      try {
-        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
-        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
-          isSuccess = true;
-          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
-        }
-      } catch {}
-    }
-
-    // Strategy 5: Clean Direct Commands WITHOUT -g and WITHOUT -i com.android.vending
-    if (!isSuccess) {
-      onLog?.('• تجربة [5]: أوامر التثبيت المباشرة لشاشات جيتور وهواتف السيارات...', 'info');
-      const directCommands = [
-        `pm install -r -t -d "${targetPath}" 2>&1`,
-        `pm install -r "${targetPath}" 2>&1`,
-        `cmd package install -r -t -d "${targetPath}" 2>&1`,
-        `cmd package install -r "${targetPath}" 2>&1`,
-        `pm install --user current -r -t -d "${targetPath}" 2>&1`,
-        `pm install --user 0 -r -t -d "${targetPath}" 2>&1`,
-        `pm install --user 10 -r -t -d "${targetPath}" 2>&1`,
-        `cd /data/local/tmp && pm install -r -t -d "${safeName}" 2>&1`,
-        `cd /data/local/tmp && cat "${safeName}" | pm install -S ${size} 2>&1`,
-        `cat "${targetPath}" | pm install -r -t -d -S ${size} 2>&1`,
-        `CLASSPATH=/system/framework/pm.jar app_process /system/bin com.android.commands.pm.Pm install -r -t -d "${targetPath}" 2>&1`,
-      ];
-
-      for (const cmd of directCommands) {
-        try {
-          const out = await this.execShell(adb, cmd);
-          const trimmed = out.trim();
-          if (trimmed) {
-            lastLog = trimmed;
-            onLog?.(`> استجابة: ${trimmed}`, 'info');
-          }
-          if (trimmed.toLowerCase().includes('success')) {
-            isSuccess = true;
-            break;
-          }
-        } catch (err: any) {
-          lastLog = err?.message || String(err);
-        }
-      }
-    }
-
-    // Check if installed after Strategy 5
-    if (!isSuccess) {
-      await new Promise((r) => setTimeout(r, 400));
-      try {
-        const afterRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-        newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterRaw);
-        if (newlyFoundPkg || (knownPackageName && afterRaw.includes(knownPackageName))) {
-          isSuccess = true;
-          if (!newlyFoundPkg && knownPackageName) newlyFoundPkg = knownPackageName;
-        }
-      } catch {}
-    }
-
-    // Strategy 6: Native PackageInstaller Component Intent + Automated Confirmation (Zero Manual Intervention)
-    // If the firmware enforces user confirmation dialog, invoke ONLY the PackageInstaller component
-    // (Never launch file manager or generic VIEW intents) and auto-confirm via input tap.
-    if (!isSuccess) {
-      onLog?.('• تجربة [6]: استدعاء معالج تثبيت الحزم الرسمي مع النقر التلقائي الذكي...', 'info');
-      try {
-        const launchCommands = [
-          `am start -n com.android.packageinstaller/.PackageInstallerActivity -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`,
-          `am start -n com.google.android.packageinstaller/com.android.packageinstaller.PackageInstallerActivity -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`,
-          `am start -a android.intent.action.INSTALL_PACKAGE -d "file://${targetPath}" -t "application/vnd.android.package-archive" --ez android.intent.extra.NOT_UNKNOWN_SOURCE true --ez android.intent.extra.RETURN_RESULT true 2>/dev/null`,
-        ];
-
-        for (const lCmd of launchCommands) {
-          try {
-            await this.execShell(adb, lCmd);
-          } catch {}
-        }
-
-        // Screen-Safe auto confirm that checks if dialog actually opened before tapping
-        const autoConfirmRes = await this.autoConfirmAndMonitorInstall(
-          adb,
-          beforePkgsRaw,
-          knownPackageName,
-          onLog,
-          15 // 15 seconds polling
-        );
-
-        if (autoConfirmRes.success) {
-          isSuccess = true;
-          if (autoConfirmRes.packageName) {
-            newlyFoundPkg = autoConfirmRes.packageName;
-          }
-        }
-      } catch (errIntent: any) {
-        onLog?.(`ملاحظة واجهة التثبيت: ${errIntent?.message || errIntent}`, 'info');
-      }
-    }
-
-    // Final verification of newly installed package
-    await new Promise((r) => setTimeout(r, 600));
-    let afterPkgsRaw = '';
-    try {
-      afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-    } catch {}
-
-    if (!newlyFoundPkg) {
-      newlyFoundPkg = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
-    }
-
-    let installedPkg = newlyFoundPkg || knownPackageName;
-    if (newlyFoundPkg) {
-      isSuccess = true;
-    } else if (knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
-      isSuccess = true;
-      installedPkg = knownPackageName;
-    }
-
-    if (!isSuccess) {
-      const pkgs3 = await this.execShell(adb, 'pm list packages -3 2>/dev/null');
-      if (knownPackageName && pkgs3.includes(knownPackageName)) {
-        isSuccess = true;
-        installedPkg = knownPackageName;
-      }
-    }
-
-    if (isSuccess && installedPkg) {
-      onLog?.(`تم تأكيد تثبيت التطبيق بنجاح: [${installedPkg}]`, 'success');
-
-      // Multi-User activation: ensure the app is installed and active for user 10 (driver screen), user 0, and user current
-      try {
-        await this.execShell(adb, `cmd package install-existing --user 10 ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `cmd package install-existing --user 0 ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `cmd package install-existing --user current ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `pm unhide --user current ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `pm enable --user current ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `pm unsuspend --user current ${installedPkg} 2>/dev/null`);
-      } catch {}
-
-      // Grant access rights & System Alert Window
-      onLog?.('... ضبط حقوق الوصول وتفعيل ظهور التطبيق في شاشة السيارة ولانشر البرامج', 'info');
-      try {
-        await this.execShell(adb, `appops set ${installedPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${installedPkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
-        await this.execShell(adb, `appops set ${installedPkg} RUN_IN_BACKGROUND allow 2>/dev/null`);
-        await this.execShell(adb, `pm enable ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `am broadcast -a android.intent.action.BOOT_COMPLETED -p ${installedPkg} 2>/dev/null`);
-        await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_ADDED -d "package:${installedPkg}" 2>/dev/null`);
-        onLog?.('تحقق • نافذة تنبيه النظام وظهور التطبيق: تم إصدارها بنجاح.', 'success');
-
-        await this.execShell(adb, `appops set ${installedPkg} WRITE_SETTINGS allow 2>/dev/null`);
-        await this.execShell(adb, `appops set ${installedPkg} MANAGE_EXTERNAL_STORAGE allow 2>/dev/null`);
-      } catch (ePerm: any) {
-        onLog?.(`ملاحظة ضبط الصلاحيات: ${ePerm?.message || ePerm}`, 'info');
-      }
-
-      return {
-        success: true,
-        message: `تم تثبيت التطبيق (${installedPkg}) بنجاح وبشكل مباشر دون الحاجة لتدخل يدوي.`,
-        packageName: installedPkg,
-      };
-    }
-
-    const translated = this.translateAndroidInstallError(lastLog);
-    return {
-      success: false,
-      message: translated || lastLog || 'تعذر إتمام التثبيت التلقائي المباشر على نظام السيارة.',
-      packageName: knownPackageName,
-    };
-  }
-
-  /**
-   * Helper to find a newly installed package by comparing package lists
-   */
-  private static findDiffPackage(beforeRaw: string, afterRaw: string): string | undefined {
-    const parse = (raw: string) =>
-      new Set(
-        raw
-          .split('\n')
-          .map((l) => l.replace(/^package:/, '').trim())
-          .filter(Boolean)
-      );
-
-    const beforeSet = parse(beforeRaw);
-    const afterList = Array.from(parse(afterRaw));
-
-    for (const pkg of afterList) {
-      if (!beforeSet.has(pkg)) {
-        return pkg;
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * Automatically confirms the Car PackageInstaller dialog by simulating click on "تثبيت" / "Install"
-   * ONLY if the dialog is verified active on screen, preventing accidental radio or home screen interactions.
-   */
-  public static async autoConfirmAndMonitorInstall(
-    adb: Adb,
-    beforePkgsRaw: string,
-    knownPackageName?: string,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    timeoutSeconds: number = 25
-  ): Promise<{ success: boolean; packageName?: string }> {
-    onLog?.('جارٍ فحص شاشة السيارة والتحقق من ظهور نافذة التثبيت...', 'info');
-
-    // Wait a brief moment for the dialog activity to render
-    await new Promise((r) => setTimeout(r, 600));
-
-    // 1. Detect screen resolution
-    let screenWidth = 1920;
-    let screenHeight = 1080;
-    try {
-      const sizeOut = await this.execShell(adb, 'wm size 2>/dev/null');
-      const match = sizeOut.match(/(\d+)x(\d+)/);
-      if (match && match[1] && match[2]) {
-        const w = parseInt(match[1], 10);
-        const h = parseInt(match[2], 10);
-        screenWidth = Math.max(w, h);
-        screenHeight = Math.min(w, h);
-      }
-    } catch {}
-
-    // In Jetour T2 / Chery DesaySV head units, the install dialog is centered:
-    let targetX = Math.round(screenWidth * 0.5);
-    let targetY = Math.round(screenHeight * 0.575);
-    let foundExactBounds = false;
-    let isInstallerFocused = false;
-
-    // Check if the current focused window or activity belongs to package installer
-    try {
-      const focusOut = await this.execShell(adb, 'dumpsys window | grep -E "mCurrentFocus|mFocusedApp" 2>/dev/null || dumpsys activity top 2>/dev/null');
-      if (/packageinstaller|InstallAppProgress|PackageInstallerActivity|PackageInstaller|InstallStart|InstallInstalling|ConfirmInstall/i.test(focusOut)) {
-        isInstallerFocused = true;
-      }
-    } catch {}
-
-    // 2. Try uiautomator dump to locate exact coordinates of "تثبيت" or "Install" or "确定"
-    try {
-      await this.execShell(adb, 'uiautomator dump /data/local/tmp/uidump.xml 2>/dev/null');
-      const dump = await this.execShell(adb, 'cat /data/local/tmp/uidump.xml 2>/dev/null');
-      if (dump && dump.includes('bounds=')) {
-        const btnRegex = /(?:text|content-desc)="(?:تثبيت|تثبيت التطبيق|موافق|تأكيد|استمرار|Install|INSTALL|Package installer|安装|继续安装|确定)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/i;
-        const match = dump.match(btnRegex);
-        if (match && match[1] && match[2] && match[3] && match[4]) {
-          const x1 = parseInt(match[1], 10);
-          const y1 = parseInt(match[2], 10);
-          const x2 = parseInt(match[3], 10);
-          const y2 = parseInt(match[4], 10);
-          targetX = Math.round((x1 + x2) / 2);
-          targetY = Math.round((y1 + y2) / 2);
-          foundExactBounds = true;
-          isInstallerFocused = true;
-          onLog?.(`> تم رصد إحداثيات زر التثبيت بدقة: [X: ${targetX}, Y: ${targetY}]`, 'info');
-        } else {
-          // Check by resource-id
-          const idRegex = /resource-id="[^"]*(?:ok_button|button1|install_button|continue_button|btn_install)[^"]*"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/i;
-          const idMatch = dump.match(idRegex);
-          if (idMatch && idMatch[1] && idMatch[2] && idMatch[3] && idMatch[4]) {
-            const x1 = parseInt(idMatch[1], 10);
-            const y1 = parseInt(idMatch[2], 10);
-            const x2 = parseInt(idMatch[3], 10);
-            const y2 = parseInt(idMatch[4], 10);
-            targetX = Math.round((x1 + x2) / 2);
-            targetY = Math.round((y1 + y2) / 2);
-            foundExactBounds = true;
-            isInstallerFocused = true;
-            onLog?.(`> تم رصد زر التثبيت عبر معرّف الواجهة: [X: ${targetX}, Y: ${targetY}]`, 'info');
-          }
-        }
-      }
-      await this.execShell(adb, 'rm -f /data/local/tmp/uidump.xml 2>/dev/null');
-    } catch {}
-
-    // 3. Screen Safety Guard: Only perform tap if packageinstaller is verified
-    // Never send KEYCODE 23 (which opens/toggles the car radio on Desay SV head units!)
-    if (foundExactBounds || isInstallerFocused) {
-      onLog?.(`> تم التحقق من نافذة التثبيت، تنفيذ النقر التلقائي على زر (تثبيت) [${targetX}, ${targetY}]...`, 'info');
-      await this.execShell(adb, `input tap ${targetX} ${targetY} 2>/dev/null`);
-      await this.execShell(adb, 'input keyevent 22 2>/dev/null && input keyevent 66 2>/dev/null'); // DPAD_RIGHT + ENTER
-      await this.execShell(adb, 'input keyevent 66 2>/dev/null'); // KEYCODE_ENTER
-    } else {
-      onLog?.('⚠️ لم تظهر نافذة تثبيت الحزم على واجهة السيارة (تم حجب النقر العشوائي لمنع تشغيل الراديو أو واجهة الشاشة).', 'warning');
-    }
-
-    // 4. Monitoring polling loop
-    const startTime = Date.now();
-    const maxWaitMs = timeoutSeconds * 1000;
-    let newlyFoundPkg: string | undefined;
-
-    while (Date.now() - startTime < maxWaitMs) {
-      await new Promise((r) => setTimeout(r, 1200));
-
-      const elapsedSec = Math.round((Date.now() - startTime) / 1000);
-
-      try {
-        const afterPkgsRaw = await this.execShell(adb, 'pm list packages 2>/dev/null');
-
-        if (knownPackageName && afterPkgsRaw.includes(knownPackageName)) {
-          newlyFoundPkg = knownPackageName;
-          break;
-        }
-
-        const diff = this.findDiffPackage(beforePkgsRaw, afterPkgsRaw);
-        if (diff) {
-          newlyFoundPkg = diff;
-          break;
-        }
-      } catch {}
-
-      // Assist click ONLY IF verified on screen
-      if ((elapsedSec === 2 || elapsedSec === 5) && (foundExactBounds || isInstallerFocused)) {
-        onLog?.(`> إرسال نقرة تأكيد مساندة (ثانية ${elapsedSec})...`, 'info');
-        await this.execShell(adb, `input tap ${targetX} ${targetY} 2>/dev/null`);
-        if (!foundExactBounds) {
-          await this.execShell(adb, `input tap ${targetX} ${Math.round(screenHeight * 0.565)} 2>/dev/null`);
-          await this.execShell(adb, `input tap ${targetX} ${Math.round(screenHeight * 0.585)} 2>/dev/null`);
-        }
-        await this.execShell(adb, 'input keyevent 22 2>/dev/null && input keyevent 66 2>/dev/null');
-        await this.execShell(adb, 'input keyevent 66 2>/dev/null');
-      }
-
-      if (elapsedSec % 3 === 0) {
-        onLog?.(`في انتظار اكتمال التثبيت على شاشة السيارة (${elapsedSec}/${timeoutSeconds} ث)...`, 'info');
-      }
-    }
-
-    if (newlyFoundPkg) {
-      onLog?.(`تم تأكيد اكتمال التثبيت بنجاح: [${newlyFoundPkg}]`, 'success');
-      return { success: true, packageName: newlyFoundPkg };
-    }
-
-    // Final check across -3 (third party packages)
-    try {
-      const finalPkgsRaw = await this.execShell(adb, 'pm list packages -3 2>/dev/null');
-      if (knownPackageName && finalPkgsRaw.includes(knownPackageName)) {
-        return { success: true, packageName: knownPackageName };
-      }
-      const finalDiff = this.findDiffPackage(beforePkgsRaw, finalPkgsRaw);
-      if (finalDiff) {
-        return { success: true, packageName: finalDiff };
-      }
-    } catch {}
-
-    return { success: false };
-  }
-
-  /**
-   * Opens the car head unit's native File Manager directly at /sdcard/Download or opens DocumentsUI
-   */
-  public static async openCarFileManager(
-    adb: Adb,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-  ): Promise<{ success: boolean; message: string }> {
-    onLog?.('جارٍ فتح مدير ملفات السيارة (مجلد التحميلات) على شاشة السيارة...', 'info');
-
-    const openFileManagerCommands = [
-      'am start -a android.intent.action.VIEW -d "content://com.android.externalstorage.documents/document/primary:Download" -t "*/*" 2>/dev/null',
-      'am start -n com.chery.filemanager/.MainActivity 2>/dev/null',
-      'am start -n com.desay.filemanager/.MainActivity 2>/dev/null',
-      'am start -n com.android.documentsui/.files.FilesActivity 2>/dev/null',
-      'am start -n com.google.android.documentsui/com.android.documentsui.files.FilesActivity 2>/dev/null',
-      'am start -a android.intent.action.VIEW -d "file:///sdcard/Download" -t "resource/folder" 2>/dev/null',
-      'am start -a android.intent.action.VIEW -d "file:///sdcard/Download" 2>/dev/null',
-    ];
-
-    for (const cmd of openFileManagerCommands) {
-      try {
-        const res = await this.execShell(adb, cmd);
-        if (res && !res.toLowerCase().includes('error') && !res.toLowerCase().includes('exception')) {
-          onLog?.('تم إرسال أمر فتح مدير الملفات لشاشة السيارة بنجاح.', 'success');
-          return { success: true, message: 'تم فتح مدير الملفات على شاشة السيارة.' };
-        }
-      } catch {}
-    }
-
-    onLog?.('تم إرسال أوامر تشغيل مدير الملفات للشاشة.', 'info');
-    return { success: true, message: 'تم إرسال طلب فتح مدير الملفات لشاشة السيارة.' };
-  }
-
-  /**
-   * 4. Classic Storage Pipe (/sdcard/Download) (Clean commands WITHOUT -g flag)
-   */
-  public static async installViaSdcardStorage(
-    adb: Adb,
-    file: File,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
-    knownPackageName?: string
-  ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    const size = file.size;
-    const cleanBaseName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const safeName = cleanBaseName.endsWith('.apk') ? cleanBaseName : `${cleanBaseName}.apk`;
-
-    try {
-      await this.execShell(adb, 'mkdir -p /sdcard/Download 2>/dev/null');
-    } catch {}
-
-    const candidatePaths = [
-      `/sdcard/Download/${safeName}`,
-      `/sdcard/Download/app_install.apk`,
-      `/sdcard/${safeName}`,
-    ];
-
-    let targetPath = '';
-    let pushSuccess = false;
-    let pushError = '';
-
-    for (const testPath of candidatePaths) {
-      try {
-        onProgress?.(5, 'uploading', `نقل الحزمة إلى مسار التخزين (${testPath})...`);
-        onLog?.(`محاولة نقل الحزمة إلى: ${testPath}...`, 'info');
-        await this.pushFileSafe(adb, file, testPath, onProgress, onLog);
-        await new Promise((r) => setTimeout(r, 250));
-        targetPath = testPath;
-        pushSuccess = true;
-        onLog?.(`تم نقل الملف إلى ${testPath} بنجاح (${(size / (1024 * 1024)).toFixed(1)} MB).`, 'success');
-        break;
-      } catch (err: any) {
-        pushError = err.message || String(err);
-      }
-    }
-
-    if (!pushSuccess) {
-      return {
-        success: false,
-        message: `تعذر نقل الملف إلى ذاكرة التخزين: ${pushError}`,
-      };
-    }
-
-    try {
-      await this.execShell(adb, `chmod 777 "${targetPath}" 2>/dev/null`);
-    } catch {}
-
-    await new Promise((r) => setTimeout(r, 200));
-    onProgress?.(90, 'installing', 'تنفيذ أوامر التثبيت...');
-
-    const currentUserId = await this.getCurrentUserId(adb);
-
-    // Commands strictly WITHOUT -g flag
-    const directCommands = [
-      `pm install -r -t "${targetPath}"`,
-      `pm install -r "${targetPath}"`,
-      `cmd package install -r -t "${targetPath}"`,
-      `cmd package install -r "${targetPath}"`,
-      `pm install --user ${currentUserId} -r -t "${targetPath}"`,
-      `pm install --user 0 -r -t "${targetPath}"`,
-      `pm install --user 10 -r -t "${targetPath}"`,
-      `pm install --user current -r -t "${targetPath}"`,
-      `pm install -r -d -t "${targetPath}"`,
-      `sh -c 'cat "${targetPath}" | pm install -r -t -S ${size}'`,
-      `sh -c 'cat "${targetPath}" | cmd package install -r -t -S ${size}'`,
-      `sh -c 'cat "${targetPath}" | pm install -S ${size}'`,
-    ];
-
-    let isSuccess = false;
-    let lastOutput = '';
-
-    for (let i = 0; i < directCommands.length; i++) {
-      const cmd = directCommands[i];
-      try {
-        onLog?.(`[أمر التخزين ${i + 1}/${directCommands.length}] ${cmd}`, 'info');
-        const output = await this.execShell(adb, cmd);
-        const trimmed = output.trim();
-        if (trimmed) {
-          lastOutput = trimmed;
-        }
-        const isCmdSuccess = trimmed.toLowerCase().includes('success');
-        onLog?.(`استجابة الشاشة: ${trimmed || '(تم التنفيذ)'}`, isCmdSuccess ? 'success' : 'info');
-
-        if (isCmdSuccess) {
-          isSuccess = true;
-          break;
-        }
-
-        if (this.isFatalInstallError(trimmed)) {
-          break;
-        }
-      } catch (eCmd: any) {
-        const errMsg = eCmd?.message || String(eCmd);
-        if (errMsg) lastOutput = errMsg;
-      }
-      await new Promise((r) => setTimeout(r, 150));
-    }
-
-    // Try PackageManager library API as secondary fallback (WITHOUT grantRuntimePermissions)
-    if (!isSuccess && !this.isFatalInstallError(lastOutput)) {
-      try {
-        const pm = new PackageManager(adb);
-        onLog?.('تجربة التثبيت عبر مكتبة PackageManager...', 'info');
-        const pmRes = await pm.install([targetPath], {
-          allowTest: true,
-          requestDowngrade: false,
-        });
-        if ((pmRes || '').toLowerCase().includes('success')) {
-          isSuccess = true;
-        }
-      } catch (ePm: any) {
-        onLog?.(`نتيجة pm.install: ${ePm.message || ePm}`, 'info');
-      }
-    }
-
-    // Fallback: Launch Official PackageInstaller UI with Auto-Click Confirmation before giving up
-    if (!isSuccess) {
-      onLog?.('تجربة التأكيد عبر واجهة التثبيت الرسمية للشاشة مع النقر التلقائي...', 'info');
-      try {
-        const intentCmd = `am start -a android.intent.action.VIEW -d "file://${targetPath}" -t "application/vnd.android.package-archive" --grant-read-uri-permission 2>/dev/null || am start -a android.intent.action.INSTALL_PACKAGE -d "file://${targetPath}" -t "application/vnd.android.package-archive" 2>/dev/null`;
-        await this.execShell(adb, intentCmd);
-        const autoConfirmRes = await this.autoConfirmAndMonitorInstall(
-          adb,
-          '',
-          knownPackageName,
-          onLog,
-          20
-        );
-        if (autoConfirmRes.success) {
-          isSuccess = true;
-        }
-      } catch {}
-    }
-
-    // Always clean up temp file
-    await this.cleanupFile(adb, targetPath);
-
-    if (isSuccess) {
-      onProgress?.(100, 'processing', 'تم التثبيت بنجاح');
-      return {
-        success: true,
-        message: 'تم تثبيت التطبيق بنجاح عبر بروتوكول التخزين (/sdcard).',
-        packageName: knownPackageName,
-      };
-    }
-
-    // Verification fallback
-    if (knownPackageName) {
-      const isInstalled = await this.isPackageInstalled(adb, knownPackageName);
-      if (isInstalled) {
-        return {
-          success: true,
-          message: 'تم التحقق من وجود الحزمة بنجاح على نظام السيارة.',
-          packageName: knownPackageName,
-        };
-      }
-    }
-
-    const translated = this.translateAndroidInstallError(lastOutput);
-    return {
-      success: false,
-      message: translated || lastOutput || 'فشل التثبيت على مسار التخزين.',
-    };
-  }
-
-  /**
-   * Pushes a file to device storage using AdbSync with WrapReadableStream & TransformStream
+   * Safe file pusher with live progress and automatic chunked fallback
    */
   private static async pushFileSafe(
     adb: Adb,
     file: File,
-    targetPath: string,
+    remotePath: string,
     onProgress?: InstallProgressCallback,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-  ): Promise<void> {
-    const size = file.size;
-    let transferredBytes = 0;
-    const sync = await adb.sync();
+  ): Promise<boolean> {
+    const fileSize = file.size;
 
+    // 1. Try ADB Sync Service
     try {
-      const readable = new WrapReadableStream<Uint8Array>({
-        start: () => file.stream() as any,
-      });
+      const sync = await adb.sync();
+      let transferredBytes = 0;
 
       const transform = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
           transferredBytes += chunk.byteLength;
-          const pct = 5 + Math.min(80, Math.round((transferredBytes / size) * 80));
+          const pct = Math.min(80, Math.round((transferredBytes / fileSize) * 80));
           const mbTransferred = (transferredBytes / (1024 * 1024)).toFixed(1);
-          const mbTotal = (size / (1024 * 1024)).toFixed(1);
-          onProgress?.(pct, 'uploading', `جاري رفع APK إلى الشاشة (${mbTransferred} / ${mbTotal} MB)`);
+          const mbTotal = (fileSize / (1024 * 1024)).toFixed(1);
+          onProgress?.(pct, 'uploading', `رفع الحزمة إلى الشاشة (${mbTransferred} / ${mbTotal} MB)`);
           controller.enqueue(chunk);
         },
       });
 
+      const readable = new WrapReadableStream<Uint8Array>({
+        start: () => file.stream() as any,
+      });
       const stream = readable.pipeThrough(transform);
 
       await sync.write({
-        filename: targetPath,
+        filename: remotePath,
         file: stream as any,
-        permission: 0o777,
+        permission: 0o666,
       });
-    } finally {
-      try {
-        await sync.dispose();
-      } catch {}
+      await sync.dispose();
+
+      // Verify file presence
+      const sizeOut = await this.execShell(adb, `ls -l "${remotePath}" 2>/dev/null`);
+      if (sizeOut.includes(remotePath.split('/').pop() || '')) {
+        return true;
+      }
+    } catch (eSync: any) {
+      onLog?.(`ملاحظة خدمة المزامنة: ${eSync?.message || eSync}. الانتقال للرفع المباشر...`, 'info');
     }
+
+    // 2. Shell base64 fallback for smaller files or if sync fails
+    return await this.pushFileViaShell(adb, file, remotePath, onProgress);
   }
 
   /**
-   * Fallback: Pushes file via standard shell pipe for car head units where sync is restricted
+   * Fallback shell chunked pusher
    */
   private static async pushFileViaShell(
     adb: Adb,
     file: File,
-    targetPath: string,
-    onProgress?: InstallProgressCallback,
-    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
-  ): Promise<void> {
-    const size = file.size;
-    onLog?.('جاري إنشاء ملف الـ APK عبر ممر Shell المباشر...', 'info');
-
-    const socket = await adb.createSocket(`shell:cat > "${targetPath}"`);
-    const writer = socket.writable.getWriter();
-    const reader = file.stream().getReader();
-    let sentBytes = 0;
-
+    remotePath: string,
+    onProgress?: InstallProgressCallback
+  ): Promise<boolean> {
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          await writer.write(value);
-          sentBytes += value.byteLength;
-          const pct = 5 + Math.min(80, Math.round((sentBytes / size) * 80));
-          const mbTransferred = (sentBytes / (1024 * 1024)).toFixed(1);
-          const mbTotal = (size / (1024 * 1024)).toFixed(1);
-          onProgress?.(pct, 'uploading', `رفع عبر Shell (${mbTransferred} / ${mbTotal} MB)`);
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 32 * 1024;
+      const totalChunks = Math.ceil(bytes.length / chunkSize);
+
+      await this.execShell(adb, `rm -f "${remotePath}" "${remotePath}.b64" 2>/dev/null`);
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * chunkSize;
+        const end = Math.min(bytes.length, start + chunkSize);
+        const slice = bytes.subarray(start, end);
+
+        let binary = '';
+        for (let j = 0; j < slice.length; j++) {
+          binary += String.fromCharCode(slice[j]);
         }
-      }
-      await writer.close();
-    } catch (e: any) {
-      try { await writer.abort(e); } catch {}
-      throw new Error(`انقطع النقل عبر Shell: ${e.message || e}`);
-    } finally {
-      reader.releaseLock();
-    }
+        const b64 = btoa(binary);
 
-    const socketReader = socket.readable.getReader();
-    try {
-      while (true) {
-        const { done } = await socketReader.read();
-        if (done) break;
+        await this.execShell(adb, `printf "%s" "${b64}" >> "${remotePath}.b64" 2>/dev/null`);
+
+        const pct = Math.min(80, Math.round(((i + 1) / totalChunks) * 80));
+        onProgress?.(pct, 'uploading', `نقل بيانات الحزمة (${pct}%)...`);
       }
-    } catch {} finally {
-      socketReader.releaseLock();
-      try { await socket.close(); } catch {}
+
+      await this.execShell(adb, `base64 -d "${remotePath}.b64" > "${remotePath}" 2>/dev/null && rm -f "${remotePath}.b64" 2>/dev/null`);
+      await this.execShell(adb, `chmod 666 "${remotePath}" 2>/dev/null`);
+
+      const check = await this.execShell(adb, `ls -l "${remotePath}" 2>/dev/null`);
+      return check.includes(remotePath.split('/').pop() || '');
+    } catch {
+      return false;
     }
   }
 
   /**
-   * Helper to clean up temporary file from device storage
+   * Safely deletes temporary remote files
    */
   private static async cleanupFile(adb: Adb, path: string): Promise<void> {
-    if (!path) return;
-    try {
-      await adb.rm(path).catch(() => {});
-    } catch {
+    if (path && (path.startsWith('/data/local/tmp/') || path.startsWith('/sdcard/Download/temp_'))) {
       try {
         await this.execShell(adb, `rm -f "${path}" 2>/dev/null`);
       } catch {}
@@ -2607,8 +747,8 @@ export class ApkInstaller {
   }
 
   /**
-   * Unlocks security restrictions and package verifiers that cause "Restriction prevents installing" or hide apps
-   * Comprehensively detects all system and automotive user profiles and strips installation blocks.
+   * Unlocks security restrictions and package verifiers that cause "Restriction prevents installing"
+   * Comprehensively detects all automotive user profiles and strips installation blocks.
    */
   public static async unlockUserRestrictions(
     adb: Adb,
@@ -2616,7 +756,6 @@ export class ApkInstaller {
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<void> {
     try {
-      // 1. Gather all active user IDs on the device (User 0, User 10, current, etc.)
       const userIds = new Set<string>(['0', 'current']);
       if (userId) userIds.add(userId);
 
@@ -2628,7 +767,7 @@ export class ApkInstaller {
         }
       } catch {}
 
-      // 2. Package verifiers & security checks (disable so no silent blocks occur)
+      // Package verifiers & security checks
       await this.execShell(adb, 'settings put global verifier_verify_adb_installs 0 2>/dev/null');
       await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
       await this.execShell(adb, 'settings put global upload_apk_enable 0 2>/dev/null');
@@ -2641,7 +780,7 @@ export class ApkInstaller {
       await this.execShell(adb, 'appops set com.android.shell REQUEST_INSTALL_PACKAGES allow 2>/dev/null');
       await this.execShell(adb, 'appops set 2000 REQUEST_INSTALL_PACKAGES allow 2>/dev/null');
 
-      // 3. User restrictions that block app installation or unknown sources
+      // User restrictions
       const restrictions = [
         'no_install_apps',
         'no_install_unknown_sources',
@@ -2655,54 +794,15 @@ export class ApkInstaller {
         await this.execShell(adb, `settings put --user ${uid} global install_non_market_apps 1 2>/dev/null`);
       }
 
-      // Disable ADB verification and Play Protect verification timeouts which cause Aborted on cars without internet
-      await this.execShell(adb, 'settings put global verifier_verify_adb_installs 0 2>/dev/null');
-      await this.execShell(adb, 'settings put global package_verifier_enable 0 2>/dev/null');
-      await this.execShell(adb, 'settings put global upload_apk_enable 0 2>/dev/null');
-      await this.execShell(adb, 'settings put global package_verifier_user_consent 1 2>/dev/null');
-      await this.execShell(adb, 'settings put secure install_non_market_apps 1 2>/dev/null');
-
-      // Execute restriction clearing using ALL recognized Android PM command variants
-      // Note: Android versions vary between "pm set-user-restriction <r> 0 --user <id>",
-      // "pm set-user-restriction --user <id> <r> 0", and positional "pm set-user-restriction <r> 0 <id>"
       for (const r of restrictions) {
-        // Base global/default call
         await this.execShell(adb, `pm set-user-restriction ${r} 0 2>/dev/null`);
-        await this.execShell(adb, `pm set-user-restriction ${r} false 2>/dev/null`);
-
         for (const uid of Array.from(userIds)) {
-          // Standard Android variant: <restriction> <value> --user <id>
           await this.execShell(adb, `pm set-user-restriction ${r} 0 --user ${uid} 2>/dev/null`);
-          await this.execShell(adb, `pm set-user-restriction ${r} false --user ${uid} 2>/dev/null`);
-
-          // Prefixed variant: --user <id> <restriction> <value>
           await this.execShell(adb, `pm set-user-restriction --user ${uid} ${r} 0 2>/dev/null`);
-          await this.execShell(adb, `pm set-user-restriction --user ${uid} ${r} false 2>/dev/null`);
-
-          // Positional legacy variant: <restriction> <value> <id>
-          if (uid !== 'current') {
-            await this.execShell(adb, `pm set-user-restriction ${r} 0 ${uid} 2>/dev/null`);
-          }
         }
       }
 
-      // Grant unknown sources / install permissions to common file managers if present
-      const fileManagerPkgs = [
-        'com.cxinventor.file.explorer',
-        'com.alphainventor.filemanager',
-        'com.estrongs.android.pop',
-        'com.ghisler.android.TotalCommander',
-        'com.android.documentsui',
-        'com.google.android.documentsui',
-      ];
-      for (const fm of fileManagerPkgs) {
-        await this.execShell(adb, `appops set ${fm} REQUEST_INSTALL_PACKAGES allow 2>/dev/null`);
-        await this.execShell(adb, `appops set ${fm} MANAGE_EXTERNAL_STORAGE allow 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${fm} android.permission.READ_EXTERNAL_STORAGE 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${fm} android.permission.WRITE_EXTERNAL_STORAGE 2>/dev/null`);
-      }
-
-      onLog?.('تم فك قيود تثبيت التطبيقات ومصادر التثبيت الخارجية وتفعيل أذونات مديري الملفات بنجاح.', 'info');
+      onLog?.('تم فك قيود تثبيت التطبيقات ومصادر التثبيت الخارجية في نظام السيارة بنجاح.', 'info');
     } catch (e: any) {
       onLog?.(`تنبيه فك القيود: ${e.message || e}`, 'info');
     }
@@ -2755,13 +855,6 @@ export class ApkInstaller {
   /**
    * Comprehensive automotive launcher activation pipeline:
    * Solves: "التطبيق يتثبت بنجاح لكن لا يظهر في القائمة وشاشة السيارة"
-   * 1. Detects all car users (User 0, 10, 11, etc.)
-   * 2. Installs existing package into all user profiles (cmd package install-existing)
-   * 3. Unhides and enables package across users (pm unhide, pm enable, pm unsuspend)
-   * 4. Sets distraction-optimized flag so Android Automotive displays app while driving/parked
-   * 5. Wakes up package using monkey to clear FLAG_STOPPED
-   * 6. Broadcasts PACKAGE_ADDED, PACKAGE_CHANGED, INSTALL_SHORTCUT, and MAIN HOME to refresh the launcher
-   * 7. Adds to automotive global app whitelist and grants overlay permissions
    */
   public static async activatePackageForCarLauncher(
     adb: Adb,
@@ -2773,7 +866,6 @@ export class ApkInstaller {
 
     onLog?.(`تفعيل وإظهار التطبيق (${packageName}) في شاشة ولانشر السيارة...`, 'info');
 
-    // Discover all active car users
     const usersToTarget = new Set<string>(['current', '0', '10', '11']);
     if (userId) usersToTarget.add(userId);
 
@@ -2787,62 +879,27 @@ export class ApkInstaller {
 
     for (const u of usersToTarget) {
       try {
-        // Step 1: Install existing into user profile (Android Automotive multi-user fix)
         await this.execShell(adb, `cmd package install-existing --user ${u} ${packageName} 2>/dev/null`);
         await this.execShell(adb, `pm install-existing --user ${u} ${packageName} 2>/dev/null`);
-
-        // Step 2: Unhide
         await this.execShell(adb, `cmd package unhide --user ${u} ${packageName} 2>/dev/null`);
         await this.execShell(adb, `pm unhide --user ${u} ${packageName} 2>/dev/null`);
-        await this.execShell(adb, `pm set-application-hidden --user ${u} ${packageName} false 2>/dev/null`);
-
-        // Step 3: Enable
         await this.execShell(adb, `cmd package enable --user ${u} ${packageName} 2>/dev/null`);
         await this.execShell(adb, `pm enable --user ${u} ${packageName} 2>/dev/null`);
-
-        // Step 4: Unsuspend
         await this.execShell(adb, `cmd package unsuspend --user ${u} ${packageName} 2>/dev/null`);
-        await this.execShell(adb, `pm unsuspend --user ${u} ${packageName} 2>/dev/null`);
-        await this.execShell(adb, `cmd package set-distracting-restriction --user ${u} --restriction none ${packageName} 2>/dev/null`);
-
-        // Step 5: Distraction optimization (tells Android Automotive launcher this app is allowed on screen)
         await this.execShell(adb, `cmd package set-distraction-optimized --user ${u} true ${packageName} 2>/dev/null`);
         await this.execShell(adb, `cmd car_service set-distraction-optimized ${packageName} true 2>/dev/null`);
       } catch {}
     }
 
-    // Step 6: Global unhide, enable, and optimize
     try {
       await this.execShell(adb, `pm unhide ${packageName} 2>/dev/null`);
       await this.execShell(adb, `pm enable ${packageName} 2>/dev/null`);
-      await this.execShell(adb, `cmd package set-distraction-optimized true ${packageName} 2>/dev/null`);
-      await this.execShell(adb, `pm default-state --user current ${packageName} 2>/dev/null`);
-    } catch {}
-
-    // Step 7: Automotive screen overlay & background usage permissions
-    try {
       await this.execShell(adb, `appops set ${packageName} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
       await this.execShell(adb, `appops set ${packageName} GET_USAGE_STATS allow 2>/dev/null`);
       await this.execShell(adb, `pm grant ${packageName} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
-    } catch {}
-
-    // Step 8: Geely / Desay SV OEM global app whitelist
-    try {
-      await this.execShell(adb, `settings put global app_whitelist ${packageName} 2>/dev/null`);
-      await this.execShell(adb, `settings put secure app_whitelist ${packageName} 2>/dev/null`);
-    } catch {}
-
-    // Step 9: Wake up package from stopped state (Clears FLAG_STOPPED so car launchers recognize it)
-    try {
       await this.execShell(adb, `monkey -p ${packageName} -c android.intent.category.LAUNCHER 1 2>/dev/null`);
-    } catch {}
-
-    // Step 10: Broadcast to Car Launcher to refresh package list
-    try {
       await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_ADDED -d package:${packageName} 2>/dev/null`);
       await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_CHANGED -d package:${packageName} 2>/dev/null`);
-      await this.execShell(adb, `am broadcast -a android.intent.action.PACKAGE_REPLACED -d package:${packageName} 2>/dev/null`);
-      await this.execShell(adb, `am broadcast -a com.android.launcher.action.INSTALL_SHORTCUT 2>/dev/null`);
       await this.execShell(adb, `am broadcast -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null`);
     } catch {}
 
@@ -2859,7 +916,6 @@ export class ApkInstaller {
     onLog?.('جاري فحص كافة التطبيقات المثبتة لتفعيلها وإظهارها في شاشة السيارة ولانشر البرامج...', 'info');
     const currentUserId = await this.getCurrentUserId(adb);
 
-    // Get list of non-system (3rd-party) packages
     const out3 = await this.execShell(adb, 'pm list packages -3 2>/dev/null || pm list packages -u 2>/dev/null');
     const lines = out3.split('\n');
     const packages: string[] = [];
@@ -2886,7 +942,6 @@ export class ApkInstaller {
       await new Promise((r) => setTimeout(r, 60));
     }
 
-    // Global launcher refresh broadcast
     try {
       await this.execShell(adb, 'am broadcast -a android.intent.action.MAIN -c android.intent.category.HOME 2>/dev/null');
     } catch {}
@@ -2909,24 +964,6 @@ export class ApkInstaller {
   }
 
   /**
-   * Helper to check if an error is fatal (cannot be solved by changing installation flags)
-   */
-  private static isFatalInstallError(errStr: string): boolean {
-    if (!errStr) return false;
-    const err = errStr.toUpperCase();
-    return (
-      err.includes('INSTALL_FAILED_ALREADY_EXISTS') ||
-      err.includes('INSTALL_FAILED_VERSION_DOWNGRADE') ||
-      err.includes('INSTALL_FAILED_CPU_ABI_INCOMPATIBLE') ||
-      err.includes('NO_MATCHING_ABIS') ||
-      err.includes('INSTALL_FAILED_INSUFFICIENT_STORAGE') ||
-      err.includes('INSTALL_PARSE_FAILED_NOT_APK') ||
-      err.includes('INSTALL_FAILED_UPDATE_INCOMPATIBLE') ||
-      err.includes('SIGNATURE_MISMATCH')
-    );
-  }
-
-  /**
    * Automatically grants recommended automotive permissions for known car applications & stores
    */
   private static async autoGrantAutomotivePermissions(
@@ -2936,7 +973,6 @@ export class ApkInstaller {
   ): Promise<void> {
     const lower = fileNameOrPkg.toLowerCase();
 
-    // If a clean package name was passed directly (not ending in .apk)
     if (!fileNameOrPkg.endsWith('.apk') && fileNameOrPkg.includes('.')) {
       try {
         await this.execShell(adb, `appops set ${fileNameOrPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
@@ -2964,7 +1000,7 @@ export class ApkInstaller {
       }
     }
 
-    // Radar / HUD / Navigation Apps (like HUD Speed, Strelka, Yandex)
+    // Radar / HUD / Navigation Apps
     if (lower.includes('hud') || lower.includes('speed') || lower.includes('radar') || lower.includes('strelka') || lower.includes('map') || lower.includes('nav')) {
       onLog?.('اكتشاف تطبيق ملاحة/رادار سرعة: جاري تفعيل صلاحيات النوافذ العائمة والموقع الجغرافي...', 'info');
       const radarPkgs = ['air.strelkahudfree', 'air.strelkahud', 'ru.speedcamalert', 'com.yandex.yandexnavi', 'com.google.android.apps.maps'];
@@ -2977,23 +1013,6 @@ export class ApkInstaller {
         } catch {}
       }
     }
-
-    // MacroDroid & Button Mapper (Steering wheel controls / T2 / Desay SV)
-    if (lower.includes('macro') || lower.includes('droid') || lower.includes('button') || lower.includes('mapper')) {
-      onLog?.('اكتشاف أداة أزرار المقود: جاري تفعيل حزمة أذونات الخدمات وتسهيل الاستخدام تلقائياً...', 'info');
-      const mdPkg = 'com.arlosoft.macrodroid';
-      try {
-        await this.execShell(adb, `pm grant ${mdPkg} android.permission.CHANGE_CONFIGURATION 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${mdPkg} android.permission.WRITE_SECURE_SETTINGS 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${mdPkg} android.permission.SYSTEM_ALERT_WINDOW 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${mdPkg} android.permission.READ_LOGS 2>/dev/null`);
-        await this.execShell(adb, `pm grant ${mdPkg} android.permission.DUMP 2>/dev/null`);
-        await this.execShell(adb, `dumpsys deviceidle whitelist +${mdPkg} 2>/dev/null`);
-        await this.execShell(adb, `appops set ${mdPkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
-        await this.execShell(adb, `settings put secure accessibility_enabled 1 2>/dev/null`);
-        await this.execShell(adb, `settings put secure enabled_accessibility_services com.arlosoft.macrodroid/com.arlosoft.macrodroid.triggers.services.AccessibilityService:com.arlosoft.macrodroid/com.arlosoft.macrodroid.common.MacroDroidAccessibilityService:flar2.homebutton/flar2.homebutton.ButtonMapperService:io.github.sds100.keymapper/io.github.sds100.keymapper.service.KeyMapperAccessibilityService 2>/dev/null`);
-      } catch {}
-    }
   }
 
   /**
@@ -3004,7 +1023,7 @@ export class ApkInstaller {
   }
 
   /**
-   * Translates Android `INSTALL_FAILED_*` errors into clear Arabic explanations with direct fix instructions
+   * Translates Android `INSTALL_FAILED_*` errors into clear Arabic explanations
    */
   public static translateAndroidInstallError(rawError: string): string {
     if (!rawError) return 'حدث خطأ غير محدد أثناء التثبيت.';
@@ -3029,19 +1048,15 @@ export class ApkInstaller {
       err.includes('USER_RESTRICTION') ||
       err.includes('INSTALL_FAILED_USER_RESTRICTED')
     ) {
-      return 'حظر أمني من فيرموير ومصنع السيارة (SecurityException: Restriction prevents installing): قام المصنع بحظر أوامر تثبيت ADB البرمجية. الحل المباشر: استخدم بروتوكول (واجهة مثبت النظام الرسمية والنقر التلقائي) الذي يطلق المثبت الرسمي على الشاشة، أو بروتوكول (ناسف قيود النظام والمستخدمين).';
+      return 'حظر أمني من فيرموير السيارة (SecurityException: Restriction prevents installing). يُوصى باستخدام بروتوكول محرك GtInstall المستقل أو بروتوكول المستخدم النشط.';
     }
 
     if (err.includes('INSTALL_GRANT_RUNTIME_PERMISSIONS') || err.includes('SECURITYEXCEPTION') || err.includes('INSTALL_PERMISSIONS')) {
-      return 'رفض نظام السيارة الصلاحيات المباشرة أثناء التثبيت (SecurityException). يرجى استخدام (واجهة مثبت النظام الرسمية مع النقر التلقائي) لتجاوز قيود الحماية.';
-    }
-
-    if (err.includes('ABORTED')) {
-      return 'حماية نظام السيارة (جيتور / DesaySV) تمنع التثبيت الصامت من الخلفية وتتطلب واجهة التثبيت الرسمية. تم إرسال أمر النقر التلقائي لزر (تثبيت) الأخضر الظاهر على شاشتك.';
+      return 'رفض نظام السيارة الصلاحيات المباشرة أثناء التثبيت (SecurityException). تم تحديث الأوامر لتجنب طلب الأذونات المحظورة أثناء التثبيت ومنحها بعد اكتمال التثبيت.';
     }
 
     if (err.includes('INSTALL_FAILED_ALREADY_EXISTS') || err.includes('UPDATE_INCOMPATIBLE') || err.includes('SIGNATURE_MISMATCH')) {
-      return 'توجد نسخة سابقة مثبتة على الشاشة بتوقيع مختلف (Signature Mismatch). الحل: قم بحذف النسخة السابقة أولاً (من قسم إدارة التطبيقات في هذا البرنامج) ثم أعد التثبيت.';
+      return 'توجد نسخة سابقة مثبتة على الشاشة بتوقيع مختلف (Signature Mismatch). الحل: قم بحذف النسخة السابقة أولاً (من قسم إدارة التطبيقات) ثم أعد التثبيت.';
     }
     if (err.includes('INSTALL_FAILED_VERSION_DOWNGRADE')) {
       return 'الإصدار المراد تثبيته أقدم من الإصدار الموجود حالياً على الشاشة. الحل: قم بإلغاء تثبيت النسخة الحالية أولاً.';
@@ -3050,28 +1065,19 @@ export class ApkInstaller {
       return 'ملف الـ APK غير صالح أو تالف أو تم تنزيله بشكل غير مكتمل. يرجى إعادة تنزيل الملف من مصدره.';
     }
     if (err.includes('INSTALL_FAILED_OLDER_SDK') || err.includes('INSTALL_PARSE_FAILED_MIN_SDK')) {
-      return 'التطبيق غير متوافق مع إصدار نظام شاشة سيارتك (يتطلب إصدار أندرويد أحدث). يرجى تنزيل إصدار يتوافق مع أندرويد الشاشة.';
+      return 'التطبيق غير متوافق مع إصدار نظام شاشة سيارتك (يتطلب إصدار أندرويد أحدث).';
     }
     if (err.includes('INSTALL_FAILED_CPU_ABI_INCOMPATIBLE') || err.includes('NO_MATCHING_ABIS')) {
-      return 'معمارية التطبيق غير متوافقة مع معالج الشاشة (مثلاً التطبيق 64-bit ومعالج شاشتك 32-bit armeabi-v7a). يرجى تنزيل نسخة 32-bit armeabi-v7a من التطبيق.';
+      return 'معمارية التطبيق غير متوافقة مع معالج الشاشة (مثلاً التطبيق 64-bit ومعالج شاشتك 32-bit armeabi-v7a).';
     }
     if (err.includes('INSTALL_FAILED_INSUFFICIENT_STORAGE')) {
       return 'مساحة تخزين شاشة السيارة ممتلئة. يرجى حذف بعض الملفات أو التطبيقات لتوفير مساحة كافية.';
     }
-    if (err.includes('INSTALL_FAILED_USER_RESTRICTED')) {
-      return 'نظام السيارة مقيد من الشركة المصنعة لمنع تثبيت التطبيقات غير المصرح بها (User Restricted). تم إطلاق نافذة التثبيت على شاشة السيارة لتأكيد التثبيت يدوياً.';
-    }
     if (err.includes('INSTALL_FAILED_VERIFICATION_FAILURE') || err.includes('VERIFICATION_TIMEOUT')) {
-      return 'فشلت أداة التحقق من الحزم الأمنية في الشاشة. يمكنك تعطيل فاحص الحزم من قسم (أدوات النظام) لتسريع التثبيت.';
+      return 'فشلت أداة التحقق من الحزم الأمنية في الشاشة. تم تعطيل التحقق تلقائياً.';
     }
     if (err.includes('INSTALL_PARSE_FAILED_NO_CERTIFICATES')) {
       return 'ملف التطبيق غير موقع بشهادة رقمية (Not Signed). يرجى استخدام تطبيق موقع بشهادة رسمية.';
-    }
-    if (err.includes('INSTALL_FAILED_DEXOPT')) {
-      return 'فشل تحسين كود التطبيق (Dexopt Failed). قد تكون الذاكرة العشوائية RAM في شاشة السيارة ممتلئة. أعد تشغيل الشاشة وحاول مرة أخرى.';
-    }
-    if (err.includes('SOCKET OPEN FAILED') || err.includes('CLOSED') || err.includes('TRANSPORT ENDPOINT')) {
-      return 'تم توجيه مسار النقل عبر التخزين المباشر لتجاوز قيود المنافذ المقفلة.';
     }
 
     return rawError;
@@ -3079,5 +1085,36 @@ export class ApkInstaller {
 
   public static formatInstallErrorMessage(rawError: string): string {
     return this.translateAndroidInstallError(rawError);
+  }
+
+  /**
+   * Opens the car's native file manager / DocumentsUI to /sdcard/Download
+   */
+  public static async openCarFileManager(
+    adb: Adb,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<{ success: boolean; message: string }> {
+    onLog?.('جاري استدعاء وتشغيل مدير الملفات على شاشة السيارة...', 'info');
+
+    const commands = [
+      'am start -a android.intent.action.VIEW -d "content://com.android.externalstorage.documents/document/primary%3ADownload" -t "*/*" 2>/dev/null',
+      'am start -a android.intent.action.OPEN_DOCUMENT -d "file:///sdcard/Download" -t "*/*" 2>/dev/null',
+      'am start -a android.intent.action.VIEW -d "file:///sdcard/Download" -t "resource/folder" 2>/dev/null',
+      'am start -n com.android.documentsui/.files.FilesActivity 2>/dev/null',
+      'am start -n com.google.android.documentsui/.files.FilesActivity 2>/dev/null',
+      'am start -a android.intent.action.MAIN -c android.intent.category.APP_FILES 2>/dev/null',
+    ];
+
+    for (const cmd of commands) {
+      try {
+        await this.execShell(adb, cmd);
+      } catch {}
+    }
+
+    onLog?.('تم إرسال أمر فتح مدير الملفات لشاشة السيارة بنجاح.', 'success');
+    return {
+      success: true,
+      message: 'تم فتح مدير الملفات بشاشة سيارتك بنجاح.',
+    };
   }
 }

@@ -16,14 +16,12 @@ export interface DeviceInfo {
 
 export type InstallMethod = 
   | 'auto'
-  | 'jetour_official'
-  | 'jetour_helper'
-  | 'package_installer_ui' 
-  | 'restriction_annihilator' 
-  | 'spoofed_installer' 
-  | 'car_download_staging' 
-  | 'broadcast_intent' 
-  | 'root_su_inject';
+  | 'stream_session'
+  | 'app_process_gt'
+  | 'active_user'
+  | 'desay_broadcast'
+  | 'download_staging'
+  | 'root_su';
 
 export interface ApkItem {
   id: string;
