@@ -211,36 +211,27 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
         </div>
       </div>
 
-      {/* Install Method & Fix Protocol Bar */}
-      <div className="mt-3.5 bg-slate-950/60 rounded-xl p-3 border border-slate-800 flex flex-col gap-2.5 text-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-            <span className="text-slate-300 font-medium">بروتوكول التثبيت:</span>
-            <select
-              value={selectedMethod}
-              onChange={(e) => onSelectMethod(e.target.value as InstallMethod)}
-              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
-            >
-              <option value="jetour_official">🛡️ مثبت Jetour الرسمي (جلسة PackageInstaller مع موافقة شاشة السيارة)</option>
-              <option value="auto">🌟 الوضع التلقائي الرسمي (جلسة النظام ثم مجلد Download للموافقة اليدوية)</option>
-              <option value="car_download_staging">📁 مجلد Download (فتح مثبت السيارة للموافقة اليدوية)</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px] text-slate-400">
-            <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
-              ✓ مسارات Jetour الرسمية فقط مع تأكيد المستخدم على شاشة السيارة
-            </span>
-          </div>
+      {/* Unified Active Protocol Reference Bar */}
+      <div className="mt-3.5 bg-slate-950/60 rounded-xl p-3 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+          <span className="text-slate-400 font-medium">البروتوكول المعتمد لرفع وتثبيت APK:</span>
+          <span className="font-bold text-slate-100 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-750 font-mono">
+            {selectedMethod === 'auto' && '🌟 الوضع التلقائي الذكي الشامل (Auto Multi-Stage)'}
+            {selectedMethod === 'jetour_official' && '🛡️ مثبت Jetour الرسمي (PackageInstaller Session)'}
+            {selectedMethod === 'jetour_helper' && '🚀 محرك r.sh و GtInstall المستقل (Jetour T2)'}
+            {selectedMethod === 'package_installer_ui' && '🖥️ واجهة مثبت النظام الرسمية مع النقر التلقائي'}
+            {selectedMethod === 'restriction_annihilator' && '💥 ناسف قيود النظام والمستخدمين (0 و 10)'}
+            {selectedMethod === 'spoofed_installer' && '🎭 جلسة التثبيت بالهوية الموثوقة (Play Store)'}
+            {selectedMethod === 'broadcast_intent' && '📡 حاقن أوامر وبث النظام (Desay SV / Chery)'}
+            {selectedMethod === 'car_download_staging' && '📁 إيداع مجلد التحميلات ومدير الملفات (/sdcard/Download)'}
+            {selectedMethod === 'root_su_inject' && '⚡ الحقن المباشر بصلاحيات الروت (su / xbin)'}
+          </span>
         </div>
 
-        {/* Informative Helper for Selected Protocol */}
-        <div className="text-[11px] text-slate-400 bg-slate-900/50 border border-slate-800/80 rounded-lg px-2.5 py-1.5 flex items-center justify-between flex-wrap gap-2">
-          <span className="text-slate-300">
-            {selectedMethod === 'auto' && '🌟 يبدأ بجلسة PackageInstaller الرسمية، ثم يضع الملف في Download لتوافق عليه يدويًا من شاشة السيارة.'}
-            {selectedMethod === 'jetour_official' && '🛡️ يبث APK إلى جلسة PackageInstaller الرسمية؛ قد تحتاج إلى الموافقة على الطلب من شاشة السيارة.'}
-            {selectedMethod === 'car_download_staging' && '📁 يضع APK في Download ويفتح مدير الملفات؛ أكمل التثبيت يدويًا من واجهة السيارة.'}
+        <div className="flex items-center gap-2 text-[11px] text-slate-400">
+          <span className="inline-flex items-center gap-1 text-emerald-400 font-mono">
+            ✓ موحد مع قائمة الحزم الـ12 الجاهزة
           </span>
         </div>
       </div>

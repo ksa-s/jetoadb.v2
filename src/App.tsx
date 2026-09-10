@@ -10,6 +10,7 @@ import { PermissionsCard } from './components/PermissionsCard';
 import { ShellCard } from './components/ShellCard';
 import { LogTerminal } from './components/LogTerminal';
 import { DirectAppsCatalogCard } from './components/DirectAppsCatalogCard';
+import { UnifiedProtocolSelector } from './components/UnifiedProtocolSelector';
 import { CarToolsModal } from './components/CarToolsModal';
 import { AppManagerModal } from './components/AppManagerModal';
 import { PermissionsModal } from './components/PermissionsModal';
@@ -393,7 +394,17 @@ export default function App() {
           isWebUsbSupported={isWebUsbSupported}
         />
 
-        {/* Direct Apps Catalog (YouTube Vanced, MicroG, SmartTube, Cx File Explorer) */}
+        {/* Unified Installation Protocols Section */}
+        <UnifiedProtocolSelector
+          selectedMethod={selectedMethod}
+          onSelectMethod={setSelectedMethod}
+          isConnected={isConnected}
+          onUnlockRestrictions={handleUnlockRestrictions}
+          onOpenCarFileManager={handleOpenCarFileManager}
+          onExposeAllApps={handleExposeAllApps}
+        />
+
+        {/* Direct Apps Catalog (Jetour Recommended 12 Apps - Compact Checkbox Grid) */}
         <DirectAppsCatalogCard
           adb={adb}
           isConnected={isConnected}
@@ -408,6 +419,7 @@ export default function App() {
             }
           }}
           onLaunchApp={handleLaunchApp}
+          selectedMethod={selectedMethod}
         />
 
         {/* APK Batch Installer Card */}

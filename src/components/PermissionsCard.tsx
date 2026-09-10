@@ -44,6 +44,7 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
   const [isLoadingGranted, setIsLoadingGranted] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [activeCategory, setActiveCategory] = useState<'all' | 'system' | 'overlay' | 'location' | 'storage' | 'hardware'>('all');
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const popularCarApps = [
     { name: 'Agama Car Launcher', pkg: 'altergames.carlauncher' },
@@ -363,44 +364,62 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
   return (
     <div className="w-full rounded-2xl bg-slate-900/80 border border-slate-800 p-4 sm:p-5 backdrop-blur-sm shadow-xl space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+          <div className="w-9 h-9 rounded-xl bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
+            <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
               إدارة وتفعيل أذونات وتصاريح التطبيقات (Permissions Manager)
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-700/50 text-emerald-400">
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-700/50 text-emerald-400">
                 ADB Rootless
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              منح الصلاحيات الحساسة (إعدادات النظام، الظهور فوق الشاشة، الـ GPS، واستثناء البطارية) بنقرة واحدة
+              منح الصلاحيات الحساسة (إعدادات النظام، الظهور فوق الشاشة، الـ GPS، واستثناء البطارية).
             </p>
           </div>
         </div>
 
-        {/* Quick Batch Action */}
-        <button
-          onClick={handleGrantAll}
-          disabled={!isConnected || isProcessing || !targetPackage.trim()}
-          className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-600/20 cursor-pointer shrink-0"
-        >
-          {isProcessing ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>جاري المعالجة...</span>
-            </>
-          ) : (
-            <>
-              <Zap className="w-4 h-4 fill-current" />
-              <span>منح كافة الصلاحيات بنقرة واحدة ⚡</span>
-            </>
-          )}
-        </button>
+        {/* Action Controls: Batch Grant + Accordion Toggle */}
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <button
+            type="button"
+            onClick={handleGrantAll}
+            disabled={!isConnected || isProcessing || !targetPackage.trim()}
+            className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-emerald-600/20 cursor-pointer shrink-0"
+            title="منح كافة الصلاحيات الأساسية للتطبيق المستهدف"
+          >
+            {isProcessing ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>جاري المعالجة...</span>
+              </>
+            ) : (
+              <>
+                <Zap className="w-3.5 h-3.5 fill-current" />
+                <span>منح الصلاحيات بنقرة واحدة ⚡</span>
+              </>
+            )}
+          </button>
+
+          {/* Accordion Expand / Collapse Button */}
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-750 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+            title={isExpanded ? 'طي قسم الصلاحيات' : 'توسيع وتخصيص الصلاحيات الفردية'}
+          >
+            <span>{isExpanded ? 'طي القسم' : 'عرض الأذونات والتصاريح (18) ▾'}</span>
+            <ChevronDown className={`w-3.5 h-3.5 text-cyan-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
       </div>
 
+      {/* Collapsible Body */}
+      {isExpanded && (
+        <div className="space-y-4 pt-1">
       {/* Package Selector & Input */}
       <div className="bg-slate-950/70 rounded-xl p-3.5 border border-slate-800 space-y-3">
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
@@ -768,6 +787,8 @@ export const PermissionsCard: React.FC<PermissionsCardProps> = ({
           </button>
         </form>
       </div>
+        </div>
+      )}
     </div>
   );
 };
