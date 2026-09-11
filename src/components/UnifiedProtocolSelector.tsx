@@ -48,6 +48,15 @@ export const PROTOCOLS_LIST: ProtocolOption[] = [
     icon: <Sparkles className="w-4 h-4 text-emerald-400" />
   },
   {
+    id: 'classic_modbay',
+    name: 'البروتوكول الكلاسيكي (Classic ModBay / ADB)',
+    badge: 'بروتوكول المواقع الروسية',
+    badgeColor: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+    desc: 'يطابق تماماً الطريقة المستخدمة في أداة ModBay والمواقع الروسية. يرسل الملف كحزمة أساسية ويثبتها بأمر ADB كلاسيكي بدون تعقيد (يظهر التطبيق كأنه من أصل النظام ولا يمكن حذفه من الشاشة).',
+    recommendedFor: 'إذا فشلت باقي الطرق وكنت تريد مطابقة نفس نتيجة الموقع الروسي تماماً',
+    icon: <Terminal className="w-4 h-4 text-blue-400" />
+  },
+  {
     id: 'pipe_stream',
     name: 'حاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream cat | pm install -S)',
     badge: 'تخطي حظر Desay SV و Chery المباشر',

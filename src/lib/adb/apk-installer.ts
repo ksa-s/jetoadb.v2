@@ -50,6 +50,13 @@ export class ApkInstaller {
       await this.unlockUserRestrictions(adb, currentUserId, onLog);
     } catch {}
 
+    // -1. Specific Protocol Execution: Classic ModBay
+    if (preferredMethod === 'classic_modbay') {
+      onLog?.('بدء بروتوكول الكلاسيكي (ModBay / الروسي)...', 'info');
+      const res = await this.installViaClassicModbay(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'classic_modbay', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+    }
+
     // 0. Specific Protocol Execution: Desay SV / Chery Pipe-Stream Engine
     if (preferredMethod === 'pipe_stream') {
       onLog?.('بدء بروتوكول حاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream)...', 'info');
@@ -214,6 +221,62 @@ export class ApkInstaller {
       return { ...result, methodUsed, packageName: finalPkg };
     }
     return { ...result, methodUsed, packageName: effectivePackageName };
+  }
+
+  /**
+   * Protocol ModBay Classic: Exactly mirrors the Russian ModBay approach.
+   * Simple push to /data/local/tmp/ and standard `pm install -g`.
+   * Apps installed this way are treated as system apps by the Jetour launcher.
+   */
+  public static async installViaClassicModbay(
+    adb: Adb,
+    file: File,
+    onProgress?: InstallProgressCallback,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    knownPackageName?: string
+  ): Promise<{ success: boolean; message: string; packageName?: string }> {
+    onLog?.('بدء بروتوكول المواقع الروسية (Classic ModBay)...', 'info');
+    onProgress?.(5, 'uploading', 'فك قيود ديساي ونقل الملف...');
+
+    // 1. ModBay pre-commands (Jetour / Chery specific flags)
+    await this.applyDesaySvPreCommands(adb, onLog);
+
+    // 2. Push APK to /data/local/tmp
+    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const remotePath = `/data/local/tmp/${cleanName}`;
+
+    const pushOk = await this.pushFileSafe(adb, file, remotePath, onProgress, onLog);
+    if (!pushOk) {
+      return { success: false, message: 'فشل النقل إلى المسار المؤقت.' };
+    }
+
+    onProgress?.(85, 'installing', 'تثبيت الحزمة الكلاسيكي...');
+    let out = await this.execShell(adb, `pm install -g "${remotePath}" 2>&1`);
+    onLog?.(`نتيجة التثبيت الكلاسيكي (tmp): ${out.trim()}`, 'info');
+
+    if (!/Success/i.test(out)) {
+      onLog?.('فشل التثبيت من tmp، التجربة عبر sdcard...', 'info');
+      const sdcardPath = `/sdcard/Download/${cleanName}`;
+      await this.execShell(adb, `cp "${remotePath}" "${sdcardPath}" 2>/dev/null`);
+      out = await this.execShell(adb, `pm install -g "${sdcardPath}" 2>&1`);
+      onLog?.(`نتيجة التثبيت الكلاسيكي (sdcard): ${out.trim()}`, 'info');
+      await this.cleanupFile(adb, sdcardPath);
+    }
+
+    await this.cleanupFile(adb, remotePath);
+
+    if (/Success/i.test(out)) {
+      return {
+        success: true,
+        message: 'تم التثبيت بنجاح باستخدام بروتوكول ModBay (سيظهر كأنه من نظام الشاشة).',
+        packageName: knownPackageName,
+      };
+    }
+
+    return {
+      success: false,
+      message: this.translateAndroidInstallError(out),
+    };
   }
 
   /**

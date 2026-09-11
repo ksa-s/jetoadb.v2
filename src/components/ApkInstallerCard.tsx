@@ -344,6 +344,16 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                   {item.status === 'error' && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
+                        onClick={() => onInstallSingle(item, 'classic_modbay')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-bold text-blue-200 bg-blue-950/80 hover:bg-blue-900/80 border border-blue-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-blue-950/40"
+                        title="بروتوكول ModBay الكلاسيكي (المواقع الروسية)"
+                      >
+                        <Terminal className="w-3 h-3 text-blue-400" />
+                        <span>كلاسيكي (روسي)</span>
+                      </button>
+
+                      <button
                         onClick={() => onInstallSingle(item, 'pipe_stream')}
                         disabled={isInstalling || !isConnected}
                         className="text-[11px] font-bold text-amber-200 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-amber-950/40"

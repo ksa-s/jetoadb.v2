@@ -16,6 +16,7 @@ export interface DeviceInfo {
 
 export type InstallMethod = 
   | 'auto'
+  | 'classic_modbay'
   | 'pipe_stream'
   | 'pty_interactive'
   | 'stream_session'
