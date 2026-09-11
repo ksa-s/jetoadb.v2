@@ -19,6 +19,7 @@ import {
   Eye,
   Tv,
   FolderOpen,
+  Terminal,
 } from 'lucide-react';
 import { parseApkMetadata } from '../lib/apk-parser';
 

@@ -14,7 +14,8 @@ import {
   Unlock, 
   FolderCheck, 
   LayoutGrid,
-  Settings2
+  Settings2,
+  Terminal
 } from 'lucide-react';
 
 interface UnifiedProtocolSelectorProps {
