@@ -17,6 +17,7 @@ export interface DeviceInfo {
 export type InstallMethod = 
   | 'auto'
   | 'pipe_stream'
+  | 'pty_interactive'
   | 'stream_session'
   | 'app_process_gt'
   | 'active_user'

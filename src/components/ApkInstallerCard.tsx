@@ -353,6 +353,16 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                       </button>
 
                       <button
+                        onClick={() => onInstallSingle(item, 'pty_interactive')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-bold text-fuchsia-200 bg-fuchsia-950/80 hover:bg-fuchsia-900/80 border border-fuchsia-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-fuchsia-950/40"
+                        title="التثبيت عبر جلسة PTY التفاعلية"
+                      >
+                        <Terminal className="w-3 h-3 text-fuchsia-400" />
+                        <span>مسار PTY</span>
+                      </button>
+
+                      <button
                         onClick={() => onInstallSingle(item, 'auto')}
                         disabled={isInstalling || !isConnected}
                         className="text-[11px] font-bold text-cyan-200 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-cyan-950/40"

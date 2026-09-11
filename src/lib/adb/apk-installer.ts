@@ -57,6 +57,13 @@ export class ApkInstaller {
       return await this.finalizeInstallResult(adb, res, 'pipe_stream', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
     }
 
+    // 0.5. Specific Protocol Execution: PTY Interactive
+    if (preferredMethod === 'pty_interactive') {
+      onLog?.('بدء بروتوكول جلسة PTY التفاعلية (Interactive PTY Shell)...', 'info');
+      const res = await this.installViaPtyInteractive(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'pty_interactive', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+    }
+
     // 1. Specific Protocol Execution: Streaming Package Session
     if (preferredMethod === 'stream_session') {
       onLog?.('بدء بروتوكول جلسة الحزم المتدفقة المباشرة (Direct Streaming Package Session)...', 'info');
@@ -110,9 +117,21 @@ export class ApkInstaller {
       if (res0.success) {
         return await this.finalizeInstallResult(adb, res0, 'pipe_stream', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      onLog?.(`تخطي المرحلة 1: ${res0.message}. الانتقال للمرحلة 2...`, 'info');
+      onLog?.(`تخطي المرحلة 1: ${res0.message}. الانتقال للمرحلة 1.5...`, 'info');
     } catch (e0: any) {
-      onLog?.(`استجابة المرحلة 1: ${e0?.message || e0}. الانتقال للمرحلة 2...`, 'info');
+      onLog?.(`استجابة المرحلة 1: ${e0?.message || e0}. الانتقال للمرحلة 1.5...`, 'info');
+    }
+
+    // Stage 1.5: PTY Interactive Shell (For devices blocking standard adb exec/spawn)
+    try {
+      onLog?.('[المرحلة 1.5] تجربة جلسة PTY التفاعلية (Interactive PTY Shell)...', 'info');
+      const resPty = await this.installViaPtyInteractive(adb, file, onProgress, onLog, effectivePackageName);
+      if (resPty.success) {
+        return await this.finalizeInstallResult(adb, resPty, 'pty_interactive', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+      }
+      onLog?.(`تخطي المرحلة 1.5: ${resPty.message}. الانتقال للمرحلة 2...`, 'info');
+    } catch (ePty: any) {
+      onLog?.(`استجابة المرحلة 1.5: ${ePty?.message || ePty}. الانتقال للمرحلة 2...`, 'info');
     }
 
     // Stage 2: Direct In-Memory Streaming Package Session (Bypasses storage write restrictions and SELinux)
@@ -329,6 +348,133 @@ export class ApkInstaller {
     return {
       success: false,
       message: this.translateAndroidInstallError(out),
+    };
+  }
+
+  /**
+   * Protocol PTY: Executes the entire installation and permission grant inside a single interactive PTY session.
+   * Matches the exact explicit request for OEM/locked environments.
+   */
+  public static async installViaPtyInteractive(
+    adb: Adb,
+    file: File,
+    onProgress?: InstallProgressCallback,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    knownPackageName?: string
+  ): Promise<{ success: boolean; message: string; packageName?: string }> {
+    const fileSize = file.size;
+    onLog?.('بدء بروتوكول PTY التفاعلي المباشر (Interactive PTY Shell)...', 'info');
+    onProgress?.(5, 'uploading', 'قراءة معرفات الجهاز وتجهيز بيئة PTY...');
+
+    // 4. Получение свойств и идентификаторов устройства
+    await this.execShell(adb, 'getprop ro.product.model 2>/dev/null');
+    await this.execShell(adb, 'getprop ro.serialno 2>/dev/null');
+    await this.execShell(adb, 'getprop ro.boot.serialno 2>/dev/null');
+    await this.execShell(adb, 'getprop ro.product.device 2>/dev/null');
+    await this.execShell(adb, 'getprop ro.build.fingerprint 2>/dev/null');
+    await this.execShell(adb, 'settings get secure android_id 2>/dev/null');
+    
+    // 5. Проверка прав/состояния
+    await this.execShell(adb, 'getprop ro.build.gatekeeper.type 2>/dev/null');
+
+    // 6. Создание директории во временной памяти
+    await this.execShell(adb, 'mkdir -p /data/local/tmp 2>/dev/null');
+    await this.execShell(adb, 'mkdir -p /sdcard/Download 2>/dev/null');
+
+    // 7. Передача файла (Push)
+    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const remotePath = `/data/local/tmp/_pty_${Date.now()}_${cleanName}`;
+    const pushOk = await this.pushFileSafe(adb, file, remotePath, onProgress, onLog);
+    if (!pushOk) {
+      return { success: false, message: 'فشل نقل ملف الـ APK إلى الذاكرة المؤقتة (PTY).' };
+    }
+
+    onProgress?.(85, 'installing', 'تنفيذ الحقن داخل جلسة PTY (Interactive Shell)...');
+
+    // 8. Интерактивная Shell-сессия для установки (PTY)
+    onLog?.(`> cat "${remotePath}" | pm install -r -d -g -S ${fileSize}`, 'info');
+    
+    let out = '';
+    try {
+      // Create explicit interactive shell session
+      const socket = await adb.createSocket('shell:');
+      const writer = socket.writable.getWriter();
+      const reader = socket.readable.getReader();
+      const decoder = new TextDecoder();
+      const endMarker = `__PTY_DONE_${Math.random().toString(36).substring(2, 7)}__`;
+
+      // Variant A: Pipe Stream
+      const installCmd = `cat "${remotePath}" | pm install -r -d -g -S ${fileSize}\necho "${endMarker}:$?"\n`;
+      await writer.write(new TextEncoder().encode(installCmd));
+
+      let fullOutput = '';
+      const readPromise = (async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            fullOutput += decoder.decode(value, { stream: true });
+            if (fullOutput.includes(endMarker)) {
+              break;
+            }
+          }
+        }
+      })();
+
+      await Promise.race([
+        readPromise,
+        new Promise((_, r) => setTimeout(() => r(new Error('TIMEOUT')), 45000))
+      ]).catch(e => onLog?.(`انتهى وقت الانتظار لجلسة PTY: ${e.message}`, 'warning'));
+
+      try { await writer.close(); } catch {}
+      try { await reader.cancel(); } catch {}
+      try { await socket.close(); } catch {}
+
+      const markerIdx = fullOutput.indexOf(endMarker);
+      out = markerIdx !== -1 ? fullOutput.substring(0, markerIdx) : fullOutput;
+      
+    } catch (e: any) {
+      out = e?.message || String(e);
+    }
+
+    onLog?.(`استجابة جلسة PTY (المحاولة 1): ${out.trim()}`, 'info');
+
+    let success = /Success/i.test(out);
+
+    if (!success) {
+       onLog?.('تجربة المسار البديل /sdcard/Download داخل PTY...', 'info');
+       const sdcardPath = `/sdcard/Download/${cleanName}`;
+       await this.execShell(adb, `cp "${remotePath}" "${sdcardPath}" 2>/dev/null`);
+       out = await this.execShell(adb, `pm install -r -d -g "${sdcardPath}" 2>&1`);
+       onLog?.(`استجابة جلسة PTY (المحاولة 2): ${out.trim()}`, 'info');
+       success = /Success/i.test(out);
+       await this.cleanupFile(adb, sdcardPath);
+    }
+
+    // 9. Удаление временного файла
+    await this.cleanupFile(adb, remotePath);
+
+    if (success) {
+      if (knownPackageName && knownPackageName !== 'base') {
+        // 10. Пост-установочная настройка (Post-install)
+        onLog?.('منح أذونات Post-install داخل PTY...', 'info');
+        await this.execShell(adb, `appops set ${knownPackageName} SYSTEM_ALERT_WINDOW allow 2>/dev/null`);
+        await this.execShell(adb, `appops set ${knownPackageName} WRITE_SETTINGS allow 2>/dev/null`);
+        
+        // 11. Verify
+        await this.execShell(adb, `appops get ${knownPackageName} 2>/dev/null`);
+      }
+
+      return {
+        success: true,
+        message: 'تم التثبيت بنجاح عبر بروتوكول PTY التفاعلي.',
+        packageName: knownPackageName
+      };
+    }
+
+    return {
+      success: false,
+      message: this.translateAndroidInstallError(out)
     };
   }
 

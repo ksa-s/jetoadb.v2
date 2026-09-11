@@ -56,6 +56,15 @@ export const PROTOCOLS_LIST: ProtocolOption[] = [
     icon: <Zap className="w-4 h-4 text-amber-400" />
   },
   {
+    id: 'pty_interactive',
+    name: 'جلسة التفاعل الطرفية المباشرة (Interactive PTY Shell)',
+    badge: 'بروتوكول PTY الآمن',
+    badgeColor: 'bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30',
+    desc: 'ينفذ دورة حياة التثبيت بالكامل داخل جلسة PTY (Interactive Shell) واحدة لتجاوز عمليات الحظر التي تمنع تنفيذ الأوامر القياسية. يطبق صلاحيات Post-install تلقائياً.',
+    recommendedFor: 'الأنظمة المقفلة بشدة والتي تفشل معها أوامر التثبيت العادية أو تعطي خطأ Restriction',
+    icon: <Terminal className="w-4 h-4 text-fuchsia-400" />
+  },
+  {
     id: 'stream_session',
     name: 'جلسة الحزم المتدفقة المباشرة (Direct Streaming Package Session)',
     badge: 'تخطي قيود التخزين و FUSE',
