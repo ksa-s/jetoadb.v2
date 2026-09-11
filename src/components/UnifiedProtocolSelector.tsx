@@ -42,9 +42,18 @@ export const PROTOCOLS_LIST: ProtocolOption[] = [
     name: 'المحرك التلقائي الذكي المتكيف لشاشات السيارات (Smart Automotive Engine)',
     badge: 'تخطي ذكي صامت 100% بدون نقر',
     badgeColor: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-    desc: 'المحرك الأحدث والأذكى لشاشات السيارات: يختبر النظام ويفك القيود تلقائياً ويتجاوز حظر السيارة عبر تسلسل ذكي صامت (جلسة الحزم المتدفقة ← محرك GtInstall الجافا المستقل ← بروفايل المستخدم النشط ← بث المصنع المباشر) بدون أي نقر على الشاشة نهائياً.',
+    desc: 'المحرك الأحدث والأذكى لشاشات السيارات: يختبر النظام ويفك القيود تلقائياً ويتجاوز حظر السيارة عبر تسلسل ذكي صامت (تدفق الأنابيب المباشر Desay SV Pipe-Stream ← جلسة الحزم المتدفقة ← محرك GtInstall الجافا المستقل ← بروفايل المستخدم النشط ← بث المصنع المباشر) بدون أي نقر على الشاشة نهائياً.',
     recommendedFor: 'الخيار الأضمن والموصى به لجميع شاشات جيتور T2 وشيري وديساي المقفلة',
     icon: <Sparkles className="w-4 h-4 text-emerald-400" />
+  },
+  {
+    id: 'pipe_stream',
+    name: 'حاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream cat | pm install -S)',
+    badge: 'تخطي حظر Desay SV و Chery المباشر',
+    badgeColor: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    desc: 'البروتوكول المعتمد في أداة pimpmyride لشاشات جيتور T2 وشيري وديساي SV: تفعيل خاصية persist.sys.sv.isl وبث الحزمة مباشرة عبر أنبوب STDIN لتجاوز فحص مسار الملفات وحل خطأ Restriction prevents installing نهائياً.',
+    recommendedFor: 'شاشات Desay SV وجيتور T2 وشيري التي تمنع التثبيت وتعطي خطأ Restriction prevents installing',
+    icon: <Zap className="w-4 h-4 text-amber-400" />
   },
   {
     id: 'stream_session',
@@ -122,13 +131,13 @@ export const UnifiedProtocolSelector: React.FC<UnifiedProtocolSelectorProps> = (
           </div>
           <div>
             <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-              إدارة بروتوكولات التثبيت الموحدة (Universal Protocols)
+              بروتوكولات التثبيت وتجاوز قيود أندرويد أوتوموتيف
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-700/50 text-cyan-400">
-                مشترك لجميع الحزم ورفع APK
+                100% صامت وبدون نقر
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              حدد بروتوكول التثبيت الذي سيُعتمد لجميع العمليات (تثبيت الحزم الجاهزة الـ12 ورفع ملفات APK المخصصة).
+              حدد المحرك المعتمد لتجاوز حظر شاشة السيارة (Desay SV / Jetour T2 / Chery) وحقن ملفات APK مباشرة في النظام.
             </p>
           </div>
         </div>

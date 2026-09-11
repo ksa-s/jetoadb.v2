@@ -343,13 +343,23 @@ export const ApkInstallerCard: React.FC<ApkInstallerCardProps> = ({
                   {item.status === 'error' && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <button
+                        onClick={() => onInstallSingle(item, 'pipe_stream')}
+                        disabled={isInstalling || !isConnected}
+                        className="text-[11px] font-bold text-amber-200 bg-amber-950/80 hover:bg-amber-900/80 border border-amber-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-amber-950/40"
+                        title="التثبيت بحاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream)"
+                      >
+                        <Zap className="w-3 h-3 text-amber-400 fill-amber-400" />
+                        <span>تدفق Desay SV Pipe-Stream</span>
+                      </button>
+
+                      <button
                         onClick={() => onInstallSingle(item, 'auto')}
                         disabled={isInstalling || !isConnected}
                         className="text-[11px] font-bold text-cyan-200 bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-400/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-cyan-950/40"
                         title="إعادة التثبيت بالوضع التلقائي الذكي"
                       >
-                        <Zap className="w-3 h-3 text-cyan-400 fill-cyan-400" />
-                        <span>الوضع التلقائي الذكي</span>
+                        <Sparkles className="w-3 h-3 text-cyan-400" />
+                        <span>الوضع التلقائي المتكيف</span>
                       </button>
 
                         <button

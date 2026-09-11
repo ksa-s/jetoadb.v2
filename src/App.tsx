@@ -9,7 +9,6 @@ import { ApkInstallerCard } from './components/ApkInstallerCard';
 import { PermissionsCard } from './components/PermissionsCard';
 import { ShellCard } from './components/ShellCard';
 import { LogTerminal } from './components/LogTerminal';
-import { DirectAppsCatalogCard } from './components/DirectAppsCatalogCard';
 import { UnifiedProtocolSelector } from './components/UnifiedProtocolSelector';
 import { CarToolsModal } from './components/CarToolsModal';
 import { AppManagerModal } from './components/AppManagerModal';
@@ -17,6 +16,7 @@ import { PermissionsModal } from './components/PermissionsModal';
 import { SteeringWheelModal } from './components/SteeringWheelModal';
 import { HelpAndGuideModal } from './components/HelpAndGuideModal';
 import { Adb } from '@yume-chan/adb';
+import { Package, ShieldCheck, Terminal, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
@@ -25,6 +25,9 @@ export default function App() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isWebUsbSupported, setIsWebUsbSupported] = useState(true);
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+
+  // Navigation tab state for a smooth, clutter-free layout
+  const [activeTab, setActiveTab] = useState<'installer' | 'permissions' | 'shell'>('installer');
 
   // APK Queue
   const [apkList, setApkList] = useState<ApkItem[]>([]);
@@ -394,70 +397,119 @@ export default function App() {
           isWebUsbSupported={isWebUsbSupported}
         />
 
-        {/* Unified Installation Protocols Section */}
-        <UnifiedProtocolSelector
-          selectedMethod={selectedMethod}
-          onSelectMethod={setSelectedMethod}
-          isConnected={isConnected}
-          onUnlockRestrictions={handleUnlockRestrictions}
-          onOpenCarFileManager={handleOpenCarFileManager}
-          onExposeAllApps={handleExposeAllApps}
-        />
+        {/* Smooth Navigation Tabs */}
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div className="flex items-center gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 shadow-inner">
+            <button
+              onClick={() => setActiveTab('installer')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                activeTab === 'installer'
+                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-950/50'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              <span>تثبيت وحاقن التطبيقات</span>
+              {apkList.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-cyan-900 border border-cyan-400/40 text-cyan-200">
+                  {apkList.length}
+                </span>
+              )}
+            </button>
 
-        {/* Direct Apps Catalog (Jetour Recommended 12 Apps - Compact Checkbox Grid) */}
-        <DirectAppsCatalogCard
-          adb={adb}
-          isConnected={isConnected}
-          installedApps={installedApps}
-          onLog={addLog}
-          onRefreshInstalledApps={async () => {
-            if (adb) {
-              try {
-                const apps = await CarSystemTools.getInstalledApps(adb, false);
-                setInstalledApps(apps);
-              } catch {}
-            }
-          }}
-          onLaunchApp={handleLaunchApp}
-          selectedMethod={selectedMethod}
-        />
+            <button
+              onClick={() => setActiveTab('permissions')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                activeTab === 'permissions'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-950/50'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>أذونات ونظام السيارة</span>
+              {installedApps.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-900 border border-emerald-400/40 text-emerald-200">
+                  {installedApps.length}
+                </span>
+              )}
+            </button>
 
-        {/* APK Batch Installer Card */}
-        <ApkInstallerCard
-          apkList={apkList}
-          onAddApks={handleAddApks}
-          onRemoveApk={handleRemoveApk}
-          onClearList={handleClearList}
-          onInstallSingle={handleInstallSingle}
-          onInstallAll={handleInstallAll}
-          isInstalling={isInstalling}
-          isConnected={isConnected}
-          selectedMethod={selectedMethod}
-          onSelectMethod={setSelectedMethod}
-          onLaunchApp={handleLaunchApp}
-          onExposeApp={handleExposeApp}
-          onExposeAllApps={handleExposeAllApps}
-          onUnlockRestrictions={handleUnlockRestrictions}
-          onOpenCarFileManager={handleOpenCarFileManager}
-        />
+            <button
+              onClick={() => setActiveTab('shell')}
+              className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                activeTab === 'shell'
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-950/50'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <Terminal className="w-4 h-4" />
+              <span>طرفية الأوامر والسجلات</span>
+            </button>
+          </div>
 
-        {/* Permissions & Special AppOps Manager */}
-        <PermissionsCard
-          adb={adb}
-          isConnected={isConnected}
-          onLog={addLog}
-          installedApps={installedApps}
-        />
+          <div className="hidden md:flex items-center gap-2 text-xs text-slate-400">
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>نظام خالي من النقر وتجاوز صامت 100%</span>
+          </div>
+        </div>
 
-        {/* Custom Shell Card */}
-        <ShellCard
-          onExecuteCommand={handleExecuteShell}
-          isExecuting={isExecutingShell}
-          isConnected={isConnected}
-        />
+        {/* Tab 1: APK Installer & Universal Protocols */}
+        {activeTab === 'installer' && (
+          <div className="space-y-5">
+            <UnifiedProtocolSelector
+              selectedMethod={selectedMethod}
+              onSelectMethod={setSelectedMethod}
+              isConnected={isConnected}
+              onUnlockRestrictions={handleUnlockRestrictions}
+              onOpenCarFileManager={handleOpenCarFileManager}
+              onExposeAllApps={handleExposeAllApps}
+            />
 
-        {/* Terminal Log */}
-        <LogTerminal logs={logs} onClearLogs={() => setLogs([])} />
+            <ApkInstallerCard
+              apkList={apkList}
+              onAddApks={handleAddApks}
+              onRemoveApk={handleRemoveApk}
+              onClearList={handleClearList}
+              onInstallSingle={handleInstallSingle}
+              onInstallAll={handleInstallAll}
+              isInstalling={isInstalling}
+              isConnected={isConnected}
+              selectedMethod={selectedMethod}
+              onSelectMethod={setSelectedMethod}
+              onLaunchApp={handleLaunchApp}
+              onExposeApp={handleExposeApp}
+              onExposeAllApps={handleExposeAllApps}
+              onUnlockRestrictions={handleUnlockRestrictions}
+              onOpenCarFileManager={handleOpenCarFileManager}
+            />
+
+            <LogTerminal logs={logs} onClearLogs={() => setLogs([])} />
+          </div>
+        )}
+
+        {/* Tab 2: Car System & AppOps Permissions */}
+        {activeTab === 'permissions' && (
+          <div className="space-y-5">
+            <PermissionsCard
+              adb={adb}
+              isConnected={isConnected}
+              onLog={addLog}
+              installedApps={installedApps}
+            />
+          </div>
+        )}
+
+        {/* Tab 3: ADB Shell & Console Logs */}
+        {activeTab === 'shell' && (
+          <div className="space-y-5">
+            <ShellCard
+              onExecuteCommand={handleExecuteShell}
+              isExecuting={isExecutingShell}
+              isConnected={isConnected}
+            />
+            <LogTerminal logs={logs} onClearLogs={() => setLogs([])} />
+          </div>
+        )}
       </main>
 
       {/* Footer */}

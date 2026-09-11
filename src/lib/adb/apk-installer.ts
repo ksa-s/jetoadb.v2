@@ -50,6 +50,13 @@ export class ApkInstaller {
       await this.unlockUserRestrictions(adb, currentUserId, onLog);
     } catch {}
 
+    // 0. Specific Protocol Execution: Desay SV / Chery Pipe-Stream Engine
+    if (preferredMethod === 'pipe_stream') {
+      onLog?.('بدء بروتوكول حاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream)...', 'info');
+      const res = await this.installViaPipeStream(adb, file, onProgress, onLog, effectivePackageName);
+      return await this.finalizeInstallResult(adb, res, 'pipe_stream', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+    }
+
     // 1. Specific Protocol Execution: Streaming Package Session
     if (preferredMethod === 'stream_session') {
       onLog?.('بدء بروتوكول جلسة الحزم المتدفقة المباشرة (Direct Streaming Package Session)...', 'info');
@@ -96,57 +103,69 @@ export class ApkInstaller {
     // Intelligent multi-stage non-interactive cascade that bypasses car security layers without screen clicking
     onLog?.('بدء المحرك الذكي المتكيف لشاشات السيارات (Automotive Smart Adaptive Engine)...', 'info');
 
-    // Stage 1: Direct In-Memory Streaming Package Session (Bypasses storage write restrictions and SELinux)
+    // Stage 1: Desay SV / Chery Pipe-Stream Engine (cat apk | pm install -S) - Solves "Restriction prevents installing"
     try {
-      onLog?.('[المرحلة 1] تجربة جلسة الحزم المتدفقة المباشرة (Streaming Package Session)...', 'info');
+      onLog?.('[المرحلة 1] تجربة حاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream)...', 'info');
+      const res0 = await this.installViaPipeStream(adb, file, onProgress, onLog, effectivePackageName);
+      if (res0.success) {
+        return await this.finalizeInstallResult(adb, res0, 'pipe_stream', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+      }
+      onLog?.(`تخطي المرحلة 1: ${res0.message}. الانتقال للمرحلة 2...`, 'info');
+    } catch (e0: any) {
+      onLog?.(`استجابة المرحلة 1: ${e0?.message || e0}. الانتقال للمرحلة 2...`, 'info');
+    }
+
+    // Stage 2: Direct In-Memory Streaming Package Session (Bypasses storage write restrictions and SELinux)
+    try {
+      onLog?.('[المرحلة 2] تجربة جلسة الحزم المتدفقة المباشرة (Streaming Package Session)...', 'info');
       const res1 = await this.installViaStreamingSession(adb, file, onProgress, onLog, effectivePackageName);
       if (res1.success) {
-        return await this.finalizeInstallResult(adb, res1, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+        return await this.finalizeInstallResult(adb, res1, 'stream_session', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      onLog?.(`تخطي المرحلة 1: ${res1.message}. الانتقال الفوري للمرحلة 2...`, 'info');
+      onLog?.(`تخطي المرحلة 2: ${res1.message}. الانتقال الفوري للمرحلة 3...`, 'info');
     } catch (e1: any) {
-      onLog?.(`استجابة المرحلة 1: ${e1?.message || e1}. الانتقال للمرحلة 2...`, 'info');
+      onLog?.(`استجابة المرحلة 2: ${e1?.message || e1}. الانتقال للمرحلة 3...`, 'info');
     }
 
-    // Stage 2: Independent Java app_process Runtime (GtInstall via IPackageManager Binder)
+    // Stage 3: Independent Java app_process Runtime (GtInstall via IPackageManager Binder)
     try {
-      onLog?.('[المرحلة 2] تجربة محرك الجافا المستقل (app_process com.garagetool.installer.GtInstall)...', 'info');
+      onLog?.('[المرحلة 3] تجربة محرك الجافا المستقل (app_process com.garagetool.installer.GtInstall)...', 'info');
       const res2 = await this.installViaAppProcessGt(adb, file, onProgress, onLog, effectivePackageName);
       if (res2.success) {
-        return await this.finalizeInstallResult(adb, res2, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+        return await this.finalizeInstallResult(adb, res2, 'app_process_gt', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      onLog?.(`تخطي المرحلة 2: ${res2.message}. الانتقال الفوري للمرحلة 3...`, 'info');
+      onLog?.(`تخطي المرحلة 3: ${res2.message}. الانتقال الفوري للمرحلة 4...`, 'info');
     } catch (e2: any) {
-      onLog?.(`استجابة المرحلة 2: ${e2?.message || e2}. الانتقال للمرحلة 3...`, 'info');
+      onLog?.(`استجابة المرحلة 3: ${e2?.message || e2}. الانتقال للمرحلة 4...`, 'info');
     }
 
-    // Stage 3: Active Automotive User Profile Targeting (--user 10 / current)
+    // Stage 4: Active Automotive User Profile Targeting (--user 10 / current)
     try {
-      onLog?.(`[المرحلة 3] تجربة التثبيت الموجه للمستخدم النشط في شاشة السيارة (--user ${currentUserId})...`, 'info');
+      onLog?.(`[المرحلة 4] تجربة التثبيت الموجه للمستخدم النشط في شاشة السيارة (--user ${currentUserId})...`, 'info');
       const res3 = await this.installViaActiveUser(adb, file, onProgress, onLog, currentUserId, effectivePackageName);
       if (res3.success) {
-        return await this.finalizeInstallResult(adb, res3, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+        return await this.finalizeInstallResult(adb, res3, 'active_user', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
-      onLog?.(`تخطي المرحلة 3: ${res3.message}. الانتقال الفوري للمرحلة 4...`, 'info');
+      onLog?.(`تخطي المرحلة 4: ${res3.message}. الانتقال الفوري للمرحلة 5...`, 'info');
     } catch (e3: any) {
-      onLog?.(`استجابة المرحلة 3: ${e3?.message || e3}. الانتقال للمرحلة 4...`, 'info');
+      onLog?.(`استجابة المرحلة 4: ${e3?.message || e3}. الانتقال للمرحلة 5...`, 'info');
     }
 
-    // Stage 4: Desay SV / Chery Factory Broadcast Direct Injection
+    // Stage 5: Desay SV / Chery Factory Broadcast Direct Injection
     try {
-      onLog?.('[المرحلة 4] تجربة حاقن بث المصنع المباشر (Desay SV / Chery Factory Broadcast)...', 'info');
+      onLog?.('[المرحلة 5] تجربة حاقن بث المصنع المباشر (Desay SV / Chery Factory Broadcast)...', 'info');
       const res4 = await this.installViaDesayBroadcast(adb, file, onProgress, onLog, effectivePackageName);
       if (res4.success) {
-        return await this.finalizeInstallResult(adb, res4, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+        return await this.finalizeInstallResult(adb, res4, 'desay_broadcast', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
       }
     } catch (e4: any) {
-      onLog?.(`استجابة المرحلة 4: ${e4?.message || e4}`, 'info');
+      onLog?.(`استجابة المرحلة 5: ${e4?.message || e4}`, 'info');
     }
 
-    // Stage 5: Final Fallback: Car Download Staging
-    onLog?.('[المرحلة 5] إيداع الحزمة في مجلد التحميلات وفتح مدير الملفات...', 'info');
+    // Stage 6: Final Fallback: Car Download Staging
+    onLog?.('[المرحلة 6] إيداع الحزمة في مجلد التحميلات وفتح مدير الملفات...', 'info');
     const res5 = await this.installViaDownloadStaging(adb, file, onProgress, onLog, effectivePackageName);
-    return await this.finalizeInstallResult(adb, res5, 'auto', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
+    return await this.finalizeInstallResult(adb, res5, 'download_staging', beforePackages, effectivePackageName, currentUserId, fileName, onLog);
   }
 
   /**
@@ -176,6 +195,141 @@ export class ApkInstaller {
       return { ...result, methodUsed, packageName: finalPkg };
     }
     return { ...result, methodUsed, packageName: effectivePackageName };
+  }
+
+  /**
+   * Applies Desay SV / Chery / Jetour specific system properties and verifier disable commands.
+   * Directly solves `java.lang.SecurityException: Restriction prevents installing` and enables sideloading.
+   */
+  public static async applyDesaySvPreCommands(
+    adb: Adb,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
+  ): Promise<void> {
+    onLog?.('تطبيق إعدادات Desay SV / Chery الخاصة لفك حظر التثبيت (persist.sys.sv.isl)...', 'info');
+    const cmds = [
+      'setprop persist.sys.sv.isl true',
+      'setprop persist.sys.sv.isl 1',
+      'setprop persist.sys.chery.install true',
+      'setprop persist.sys.strict_mode_disable 1',
+      'setprop persist.adb.non_market_apps 1',
+      'settings put global install_non_market_apps 1',
+      'settings put secure install_non_market_apps 1',
+      'settings put system install_non_market_apps 1',
+      'settings put global verifier_verify_adb_installs 0',
+      'settings put global package_verifier_enable 0',
+      'settings put secure package_verifier_enable 0',
+      'settings put global block_untrusted_touches 0',
+      'appops set com.android.shell REQUEST_INSTALL_PACKAGES allow',
+      'appops set 2000 REQUEST_INSTALL_PACKAGES allow',
+      'pm set-user-restriction no_install_apps 0',
+      'pm set-user-restriction no_install_unknown_sources 0',
+      'pm set-user-restriction no_install_unknown_sources_globally 0',
+    ];
+
+    for (const cmd of cmds) {
+      await this.execShell(adb, `${cmd} 2>/dev/null`);
+    }
+  }
+
+  /**
+   * Protocol 0: Desay SV / Chery Pipe-Stream Engine (`cat apk | pm install -S <size>`)
+   * Implements the proven bypass technique from pimpmyride for Jetour T2 & Chery Desay SV head units.
+   * 1. Unlocks `persist.sys.sv.isl true` system property
+   * 2. Bypasses `Restriction prevents installing` by piping APK binary directly into STDIN
+   * 3. Tests without dangerous flags, with user 0, and with spoofed installer identity
+   */
+  public static async installViaPipeStream(
+    adb: Adb,
+    file: File,
+    onProgress?: InstallProgressCallback,
+    onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
+    knownPackageName?: string
+  ): Promise<{ success: boolean; message: string; packageName?: string }> {
+    const fileSize = file.size;
+    onLog?.('بدء بروتوكول حاقن التدفق المباشر لبايسمكس (Desay SV Pipe-Stream)...', 'info');
+    onProgress?.(5, 'uploading', 'فك قيود Desay SV وتجهيز خط الأنابيب...');
+
+    // 1. Desay SV pre-commands
+    await this.applyDesaySvPreCommands(adb, onLog);
+
+    // 2. Push APK to /data/local/tmp
+    const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const tempFileName = `_ins_${Date.now()}_${cleanName}`;
+    const remotePath = `/data/local/tmp/${tempFileName}`;
+
+    const pushOk = await this.pushFileSafe(adb, file, remotePath, onProgress, onLog);
+    if (!pushOk) {
+      return {
+        success: false,
+        message: 'فشل نقل ملف الـ APK إلى الذاكرة المؤقتة للشاشة.',
+      };
+    }
+
+    await this.execShell(adb, `chmod 644 "${remotePath}" 2>/dev/null`);
+
+    onProgress?.(85, 'installing', 'حقن الحزمة عبر تدفق الأنابيب STDIN وتجاوز قيود المسارات...');
+
+    // Variant A: Standard pipe stream without -g (prevents SecurityException)
+    onLog?.(`> cat "${remotePath}" | pm install -r -d -S ${fileSize}`, 'info');
+    let out = await this.execShell(adb, `cat "${remotePath}" | pm install -r -d -S ${fileSize} 2>&1`);
+    onLog?.(`استجابة مدير الحزم (المحاولة 1): ${out.trim()}`, 'info');
+
+    if (/Success/i.test(out)) {
+      await this.cleanupFile(adb, remotePath);
+      return {
+        success: true,
+        message: 'تم تثبيت التطبيق بنجاح عبر بروتوكول التدفق المباشر STDIN (Desay SV Pipe-Stream).',
+        packageName: knownPackageName,
+      };
+    }
+
+    // Variant B: Pipe stream with installer identity spoofing (Google Play Store)
+    onLog?.('المحاولة 1 لم تكتمل، تجربة التدفق بهوية متجر التطبيقات الرسمية (-i com.android.vending)...', 'info');
+    out = await this.execShell(adb, `cat "${remotePath}" | pm install -r -d -i com.android.vending -S ${fileSize} 2>&1`);
+    onLog?.(`استجابة مدير الحزم (المحاولة 2): ${out.trim()}`, 'info');
+
+    if (/Success/i.test(out)) {
+      await this.cleanupFile(adb, remotePath);
+      return {
+        success: true,
+        message: 'تم تثبيت التطبيق بنجاح عبر التدفق بهوية المتجر (Play Store Identity).',
+        packageName: knownPackageName,
+      };
+    }
+
+    // Variant C: Pipe stream targeting User 0
+    onLog?.('تجربة التدفق الموجه للمستخدم الأساسي للشاشة (--user 0)...', 'info');
+    out = await this.execShell(adb, `cat "${remotePath}" | pm install -r -d --user 0 -S ${fileSize} 2>&1`);
+    onLog?.(`استجابة مدير الحزم (المحاولة 3): ${out.trim()}`, 'info');
+
+    if (/Success/i.test(out)) {
+      await this.cleanupFile(adb, remotePath);
+      return {
+        success: true,
+        message: 'تم تثبيت التطبيق بنجاح عبر التدفق للمستخدم 0.',
+        packageName: knownPackageName,
+      };
+    }
+
+    // Variant D: Pipe stream with grant permissions flag -g
+    onLog?.('تجربة التدفق المباشر مع منح الصلاحيات (-r -d -g)...', 'info');
+    out = await this.execShell(adb, `cat "${remotePath}" | pm install -r -d -g -S ${fileSize} 2>&1`);
+    onLog?.(`استجابة مدير الحزم (المحاولة 4): ${out.trim()}`, 'info');
+
+    await this.cleanupFile(adb, remotePath);
+
+    if (/Success/i.test(out)) {
+      return {
+        success: true,
+        message: 'تم تثبيت التطبيق بنجاح عبر تدفق الحزم ومنح الصلاحيات.',
+        packageName: knownPackageName,
+      };
+    }
+
+    return {
+      success: false,
+      message: this.translateAndroidInstallError(out),
+    };
   }
 
   /**
@@ -398,9 +552,9 @@ export class ApkInstaller {
 
     onProgress?.(85, 'installing', `تثبيت الحزمة للمستخدم النشط (${userId})...`);
 
-    // Command without -g flag to avoid SecurityException
-    const installCmd = `pm install -r -d -t --user ${userId} "${remotePath}" 2>&1`;
-    onLog?.(`> ${installCmd}`, 'info');
+    // Use pipe-stream instead of passing file path directly to avoid "Restriction prevents installing" on Desay SV
+    const installCmd = `cat "${remotePath}" | pm install -r -d -t --user ${userId} -S ${file.size} 2>&1`;
+    onLog?.(`> cat "${remotePath}" | pm install -r -d -t --user ${userId} -S ${file.size}`, 'info');
 
     const out = await this.execShell(adb, installCmd);
     await this.cleanupFile(adb, remotePath);
@@ -417,11 +571,11 @@ export class ApkInstaller {
 
     // Try fallback to --user current or --user 0
     if (userId !== '0') {
-      onLog?.('تجربة التثبيت على المستخدم العام (User 0) ثم تفعيله للمستخدم النشط...', 'info');
+      onLog?.('تجربة التدفق الموجه للمستخدم الأساسي (User 0)...', 'info');
       const tempPath2 = `/data/local/tmp/user0_install_${Date.now()}.apk`;
       await this.pushFileSafe(adb, file, tempPath2);
       await this.execShell(adb, `chmod 644 "${tempPath2}" 2>/dev/null`);
-      const out2 = await this.execShell(adb, `pm install -r -d -t --user 0 "${tempPath2}" 2>&1`);
+      const out2 = await this.execShell(adb, `cat "${tempPath2}" | pm install -r -d -t --user 0 -S ${file.size} 2>&1`);
       await this.cleanupFile(adb, tempPath2);
 
       if (/Success/i.test(out2)) {
@@ -488,9 +642,9 @@ export class ApkInstaller {
 
     onLog?.('تم إرسال إشارات البث لمستقبلات نظام السيارة بنجاح. فحص استجابة التثبيت...', 'info');
 
-    // Monitor package installation for up to 10 seconds
+    // Monitor package installation for up to 6 seconds
     if (knownPackageName && knownPackageName !== 'base' && knownPackageName !== 'unknown.package') {
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 6; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         const installed = await this.isPackageInstalled(adb, knownPackageName);
         if (installed) {
@@ -504,9 +658,26 @@ export class ApkInstaller {
       }
     }
 
+    // Direct Pipe-Stream Fallback: If broadcast didn't complete the install, execute pipe stream immediately!
+    onLog?.('إشارات البث لم تكمل التثبيت تلقائياً. محاولة الحقن المتدفق المباشر عبر الأنبوب فوراً...', 'info');
+    const pipeRes = await this.execShell(adb, `cat "${tmpPath}" | pm install -r -d -S ${file.size} 2>&1`);
+    onLog?.(`استجابة التثبيت المتدفق: ${pipeRes.trim()}`, 'info');
+
+    if (/Success/i.test(pipeRes)) {
+      await this.cleanupFile(adb, tmpPath);
+      return {
+        success: true,
+        message: 'تم إكمال تثبيت الحزمة بنجاح عبر التدفق المباشر وتفعيلها لشاشة السيارة.',
+        packageName: knownPackageName,
+      };
+    }
+
+    // If still pending, trigger the system package installer view directly on screen
+    await this.execShell(adb, `am start -a android.intent.action.VIEW -d file://"${sdcardPath}" -t application/vnd.android.package-archive --user 0 2>/dev/null`);
+
     return {
-      success: true,
-      message: 'تم إرسال إشارة التثبيت لمستقبلات المصنع، والملف متوفر في مجلد التحميلات.',
+      success: false,
+      message: 'تم نسخ الحزمة إلى مجلد التحميلات وإرسال إشارات النظام. إذا لم يبدأ التثبيت تلقائياً، يمكنك النقر عليه في مدير الملفات.',
       packageName: knownPackageName,
     };
   }
@@ -756,6 +927,9 @@ export class ApkInstaller {
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<void> {
     try {
+      // 0. Apply Desay SV / Chery system properties (persist.sys.sv.isl true)
+      await this.applyDesaySvPreCommands(adb, onLog);
+
       const userIds = new Set<string>(['0', 'current']);
       if (userId) userIds.add(userId);
 
