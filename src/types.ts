@@ -15,6 +15,7 @@ export interface DeviceInfo {
 }
 
 export type InstallMethod = 
+  | 'russian_magic'
   | 'auto'
   | 'classic_modbay'
   | 'pipe_stream'

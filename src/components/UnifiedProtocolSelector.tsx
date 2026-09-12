@@ -39,6 +39,15 @@ export interface ProtocolOption {
 
 export const PROTOCOLS_LIST: ProtocolOption[] = [
   {
+    id: 'russian_magic',
+    name: '🪄 السكربت السحري الروسي المباشر (Russian ModBay / GarageTool Magic Script)',
+    badge: 'البروتوكول السحري الأقوى للمواقع الروسية',
+    badgeColor: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+    desc: 'التسلسل السحري الكامل المستخدم في المواقع والمجتمعات الروسية (ModBay / GarageTool / 4PDA): ينفذ أوامر فك القيود الفورية persist.sys.sv.isl وينقل الحزمة مع تصريح قراءة 644 ثم يختبر 8 مراحل تثبيت متتالية (المباشر، هوية متجر جوجل، هوية مصنع شيري، المستخدم 0، المستخدم 10، تدفق الأنابيب، ومحرك GtInstall الجافا).',
+    recommendedFor: 'الحل السحري الموصى به لتطابق تجربة الموقع الروسي وحل مشاكل التثبيت نهائياً',
+    icon: <Sparkles className="w-4 h-4 text-cyan-400" />
+  },
+  {
     id: 'auto',
     name: 'المحرك التلقائي الذكي المتكيف لشاشات السيارات (Smart Automotive Engine)',
     badge: 'تخطي ذكي صامت 100% بدون نقر',

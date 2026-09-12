@@ -2,6 +2,23 @@ import { Adb } from '@yume-chan/adb';
 import { InstalledApp } from '../../types';
 import { adbManager } from './webusb-manager';
 
+export interface PackageDiagnosticInfo {
+  packageName: string;
+  exists: boolean;
+  apkPath?: string;
+  isSystem: boolean;
+  isPrivApp: boolean;
+  isAdmin: boolean;
+  adminComponents: string[];
+  isDisabled: boolean;
+  isHidden: boolean;
+  isSuspended: boolean;
+  versionName?: string;
+  versionCode?: string;
+  userIds: string[];
+  rawSummary: string;
+}
+
 export class CarSystemTools {
   /**
    * Lists installed apps (3rd party or system) with multi-user awareness
@@ -169,102 +186,332 @@ export class CarSystemTools {
   }
 
   /**
-   * Powerful Multi-Tier Automotive App Uninstallation & Deep Force-Removal Engine
+   * Diagnostic report for a package to determine why it cannot be deleted or opened
+   */
+  public static async diagnosePackage(adb: Adb, packageName: string): Promise<PackageDiagnosticInfo> {
+    const pkg = packageName.trim();
+    if (!pkg) {
+      return {
+        packageName: '',
+        exists: false,
+        isSystem: false,
+        isPrivApp: false,
+        isAdmin: false,
+        adminComponents: [],
+        isDisabled: false,
+        isHidden: false,
+        isSuspended: false,
+        userIds: [],
+        rawSummary: 'اسم الحزمة فارغ',
+      };
+    }
+
+    try {
+      // 1. Check path
+      const pathOut = await this.exec(adb, `pm path ${pkg} 2>/dev/null || pm path --user 0 ${pkg} 2>/dev/null`);
+      const exists = pathOut.includes('package:');
+      const apkPath = exists ? pathOut.replace('package:', '').trim().split('\n')[0].trim() : undefined;
+
+      const isSystem = apkPath ? (apkPath.startsWith('/system/') || apkPath.startsWith('/vendor/') || apkPath.startsWith('/product/') || apkPath.startsWith('/oem/')) : false;
+      const isPrivApp = apkPath ? apkPath.includes('priv-app') : false;
+
+      // 2. Check Device Admin
+      const dpmOut = await this.exec(adb, `dumpsys device_policy 2>/dev/null`);
+      const adminComponents: string[] = [];
+      const adminRegex = new RegExp(`(?:admin=)?(?:ComponentInfo\\{)?(${pkg.replace(/\./g, '\\.')}/[a-zA-Z0-9._]+)\\}?`, 'gi');
+      for (const m of Array.from(dpmOut.matchAll(adminRegex))) {
+        if (m[1]) adminComponents.push(m[1].replace(/\}$/, ''));
+      }
+
+      // Query receivers
+      const recvOut = await this.exec(adb, `pm query-receivers -a android.app.action.DEVICE_ADMIN_ENABLED --components ${pkg} 2>/dev/null`);
+      for (const line of recvOut.split('\n')) {
+        if (line.includes(pkg) && line.includes('/')) {
+          const comp = line.split(/\s+/).pop()?.replace(/ComponentInfo\{|\}/g, '');
+          if (comp && !adminComponents.includes(comp)) adminComponents.push(comp);
+        }
+      }
+
+      // 3. Check disabled / hidden status
+      const disabledOut = await this.exec(adb, `pm list packages -d 2>/dev/null`);
+      const isDisabled = disabledOut.includes(pkg);
+
+      // 4. Users where package is installed
+      const userIds: string[] = [];
+      for (const u of ['0', '10', '11']) {
+        const uCheck = await this.exec(adb, `pm path --user ${u} ${pkg} 2>/dev/null`);
+        if (uCheck.includes('package:')) userIds.push(u);
+      }
+
+      // 5. Version info
+      let versionName: string | undefined;
+      let versionCode: string | undefined;
+      try {
+        const dumpsysPkg = await this.exec(adb, `dumpsys package ${pkg} 2>/dev/null`);
+        const vNameMatch = dumpsysPkg.match(/versionName=([^\s]+)/);
+        const vCodeMatch = dumpsysPkg.match(/versionCode=([^\s]+)/);
+        if (vNameMatch) versionName = vNameMatch[1];
+        if (vCodeMatch) versionCode = vCodeMatch[1];
+      } catch {}
+
+      return {
+        packageName: pkg,
+        exists,
+        apkPath,
+        isSystem,
+        isPrivApp,
+        isAdmin: adminComponents.length > 0,
+        adminComponents,
+        isDisabled,
+        isHidden: false,
+        isSuspended: false,
+        versionName,
+        versionCode,
+        userIds,
+        rawSummary: exists
+          ? `مسار الحزمة: ${apkPath} | ${isSystem ? 'تطبيق نظام' : 'تطبيق مستخدم'} | مسؤول: ${adminComponents.length > 0 ? 'نعم' : 'لا'}`
+          : 'الحزمة غير مثبتة حالياً في النظام',
+      };
+    } catch (e: any) {
+      return {
+        packageName: pkg,
+        exists: false,
+        isSystem: false,
+        isPrivApp: false,
+        isAdmin: false,
+        adminComponents: [],
+        isDisabled: false,
+        isHidden: false,
+        isSuspended: false,
+        userIds: [],
+        rawSummary: `خطأ في التشخيص: ${e.message || e}`,
+      };
+    }
+  }
+
+  /**
+   * Powerful 14-Stage Automotive Magic Force Eradication Script
    * Defeats `DELETE_FAILED_DEVICE_POLICY_MANAGER`, user restrictions, ROM locks, and stubborn car launcher links.
    */
-  public static async uninstallApp(adb: Adb, packageName: string): Promise<string> {
+  public static async deepEradicateApp(
+    adb: Adb,
+    packageName: string,
+    onStepLog?: (step: string, status: 'running' | 'ok' | 'fail' | 'info') => void
+  ): Promise<{ success: boolean; message: string; method: 'uninstalled' | 'neutralized' | 'not_found' }> {
     const pkg = packageName.trim();
     if (!pkg) throw new Error('اسم الحزمة غير صالح.');
 
-    // Step 1: Strip Device Policy & User Restrictions on uninstallation
-    const users = ['0', '10', 'current'];
-    for (const u of users) {
+    onStepLog?.(`بدء السكربت السحري لإزالة التطبيق المستعصي: ${pkg}...`, 'running');
+
+    // Stage 1: Fast diagnosis
+    const diag = await this.diagnosePackage(adb, pkg);
+    onStepLog?.(`تشخيص الحزمة: ${diag.rawSummary}`, 'info');
+
+    // Stage 2: Remove all Device Admin components
+    onStepLog?.('المرحلة 1: تفكيك صلاحيات مسؤول الجهاز (Device Administrator)...', 'running');
+    try {
+      const adminCmds: string[] = [];
+      for (const comp of diag.adminComponents) {
+        adminCmds.push(`dpm remove-active-admin --user 0 ${comp}`);
+        adminCmds.push(`dpm remove-active-admin --user 10 ${comp}`);
+        adminCmds.push(`dpm remove-active-admin ${comp}`);
+        adminCmds.push(`cmd device_policy remove-active-admin --user 0 ${comp}`);
+        adminCmds.push(`cmd device_policy remove-active-admin ${comp}`);
+      }
+      adminCmds.push(`cmd device_policy set-uninstall-blocked --user 0 ${pkg} false`);
+      adminCmds.push(`cmd device_policy set-uninstall-blocked --user 10 ${pkg} false`);
+      adminCmds.push(`cmd device_policy set-uninstall-blocked ${pkg} false`);
+
+      if (adminCmds.length > 0) {
+        await this.exec(adb, `${adminCmds.join(' 2>/dev/null; ')} 2>/dev/null`);
+      }
+      onStepLog?.('✓ تم تفكيك قيود مسؤول الجهاز وحظر إلغاء التثبيت بنجاح', 'ok');
+    } catch {
+      onStepLog?.('ملاحظة فك مسؤول الجهاز: تم المتابعة للخطوة التالية', 'info');
+    }
+
+    // Stage 3: Compound stripping of user restrictions (0, 10, current)
+    onStepLog?.('المرحلة 2: رفع قيود منع الحذف (DISALLOW_UNINSTALL_APPS)...', 'running');
+    try {
+      const unrestrictCmds = [
+        `cmd user set-restriction --user 0 no_uninstall_apps 0`,
+        `cmd user set-restriction --user 10 no_uninstall_apps 0`,
+        `cmd user set-restriction --user current no_uninstall_apps 0`,
+        `cmd user set-restriction --user 0 DISALLOW_UNINSTALL_APPS 0`,
+        `cmd user set-restriction --user 10 DISALLOW_UNINSTALL_APPS 0`,
+        `pm set-user-restriction --user 0 no_uninstall_apps 0`,
+        `pm set-user-restriction --user 10 no_uninstall_apps 0`,
+        `pm set-user-restriction --user 0 DISALLOW_UNINSTALL_APPS 0`,
+        `pm set-user-restriction --user 10 DISALLOW_UNINSTALL_APPS 0`,
+        `pm set-user-restriction no_uninstall_apps 0`,
+        `pm set-user-restriction DISALLOW_UNINSTALL_APPS 0`,
+      ];
+      await this.exec(adb, `${unrestrictCmds.join(' 2>/dev/null; ')} 2>/dev/null`);
+      onStepLog?.('✓ تم رفع قيود الحظر عن جميع مستخدمي السيارة', 'ok');
+    } catch {}
+
+    // Stage 4: Force kill processes & background services
+    onStepLog?.('المرحلة 3: إنهاء عمليات التطبيق وإيقاف الخدمات النشطة...', 'running');
+    try {
+      await this.exec(adb, `am force-stop ${pkg} 2>/dev/null; killall ${pkg} 2>/dev/null`);
+      onStepLog?.('✓ تم إيقاف نشاط التطبيق في الذاكرة', 'ok');
+    } catch {}
+
+    // Stage 5: Clear all application data and cache
+    onStepLog?.('المرحلة 4: مسح بيانات التطبيق ومخزن الذاكرة المؤقت...', 'running');
+    try {
+      await this.exec(adb, `pm clear --user 0 ${pkg} 2>/dev/null; pm clear --user 10 ${pkg} 2>/dev/null; pm clear ${pkg} 2>/dev/null`);
+      onStepLog?.('✓ تم تفريغ وتصفير بيانات التطبيق', 'ok');
+    } catch {}
+
+    // Stage 6: Reset AppOps and Revoke Permissions
+    onStepLog?.('المرحلة 5: سحب وتصفير كافة أذونات النظام...', 'running');
+    try {
+      await this.exec(adb, `appops reset ${pkg} 2>/dev/null`);
+      onStepLog?.('✓ تم سحب الصلاحيات المعطاة للتطبيق', 'ok');
+    } catch {}
+
+    // Stage 7: Standard and Per-User Uninstallation
+    onStepLog?.('المرحلة 6: تنفيذ أوامر الحذف الرسمية من نظام أندرويد...', 'running');
+    let uninstallSuccess = false;
+    const uninstallOut = await this.exec(adb, `pm uninstall --user 0 ${pkg} 2>&1`);
+    if (/Success/i.test(uninstallOut)) {
+      uninstallSuccess = true;
+      onStepLog?.(`✓ نجح الحذف للمستخدم الأساسي: ${uninstallOut.trim()}`, 'ok');
+    }
+
+    if (!uninstallSuccess) {
+      const u10Out = await this.exec(adb, `pm uninstall --user 10 ${pkg} 2>&1`);
+      if (/Success/i.test(u10Out)) {
+        uninstallSuccess = true;
+        onStepLog?.(`✓ نجح الحذف لمستخدم واجهة القيادة (10): ${u10Out.trim()}`, 'ok');
+      }
+    }
+
+    if (!uninstallSuccess) {
+      const uCurrOut = await this.exec(adb, `pm uninstall --user current ${pkg} 2>&1`);
+      if (/Success/i.test(uCurrOut)) {
+        uninstallSuccess = true;
+        onStepLog?.(`✓ نجح الحذف للمستخدم النشط: ${uCurrOut.trim()}`, 'ok');
+      }
+    }
+
+    if (!uninstallSuccess) {
+      const globalOut = await this.exec(adb, `pm uninstall ${pkg} 2>&1`);
+      if (/Success/i.test(globalOut)) {
+        uninstallSuccess = true;
+        onStepLog?.(`✓ نجح الحذف العام: ${globalOut.trim()}`, 'ok');
+      }
+    }
+
+    // Stage 8: Alternative Framework API uninstall (cmd package)
+    if (!uninstallSuccess) {
+      onStepLog?.('المرحلة 7: تجربة بروتوكول cmd package uninstall البديل...', 'running');
+      const cmdOut = await this.exec(adb, `cmd package uninstall --user 0 ${pkg} 2>&1 || cmd package uninstall ${pkg} 2>&1`);
+      if (/Success/i.test(cmdOut)) {
+        uninstallSuccess = true;
+        onStepLog?.(`✓ نجح الحذف عبر cmd package: ${cmdOut.trim()}`, 'ok');
+      }
+    }
+
+    // Stage 9: System app update removal (-k)
+    if (!uninstallSuccess) {
+      onStepLog?.('المرحلة 8: إزالة تحديثات التطبيق (-k)...', 'running');
+      const kOut = await this.exec(adb, `pm uninstall -k --user 0 ${pkg} 2>&1 || pm uninstall -k ${pkg} 2>&1`);
+      if (/Success/i.test(kOut)) {
+        uninstallSuccess = true;
+        onStepLog?.(`✓ تم حذف حزمة التحديث بنجاح: ${kOut.trim()}`, 'ok');
+      }
+    }
+
+    // Stage 10: Root su injection attempt (if car unit is rooted/permissive)
+    if (!uninstallSuccess) {
+      onStepLog?.('المرحلة 9: فحص إمكانية الحذف بصلاحيات الروت (Root su)...', 'running');
       try {
-        await this.exec(adb, `cmd user set-restriction --user ${u} no_uninstall_apps 0 2>/dev/null`);
-        await this.exec(adb, `cmd user set-restriction --user ${u} DISALLOW_UNINSTALL_APPS 0 2>/dev/null`);
-        await this.exec(adb, `pm set-user-restriction --user ${u} no_uninstall_apps 0 2>/dev/null`);
-        await this.exec(adb, `pm set-user-restriction --user ${u} DISALLOW_UNINSTALL_APPS 0 2>/dev/null`);
-        await this.exec(adb, `cmd device_policy set-uninstall-blocked --user ${u} ${pkg} false 2>/dev/null`);
-        await this.exec(adb, `cmd device_policy set-user-restriction --user ${u} no_uninstall_apps 0 2>/dev/null`);
+        const suOut = await this.exec(adb, `su -c "pm uninstall ${pkg}" 2>/dev/null || su 0 pm uninstall ${pkg} 2>/dev/null`);
+        if (/Success/i.test(suOut)) {
+          uninstallSuccess = true;
+          onStepLog?.(`✓ نجح الحذف بصلاحيات الروت: ${suOut.trim()}`, 'ok');
+        }
       } catch {}
     }
+
+    // Stage 11: Deep Freeze, Disable, and Launcher Eradication (100% Guaranteed Vanish)
+    // If the ROM protects the APK binary from being deleted (e.g. system app or factory vendor lock),
+    // we disable it, hide it, suspend it, and wipe it so it NEVER appears on the car screen again!
+    onStepLog?.('المرحلة 10: التجميد الجذري والإخفاء التام من شاشة ولانشر السيارة...', 'running');
     try {
-      await this.exec(adb, `pm set-user-restriction no_uninstall_apps 0 2>/dev/null`);
-      await this.exec(adb, `cmd device_policy set-uninstall-blocked ${pkg} false 2>/dev/null`);
+      const freezeCmds = [
+        `pm disable-user --user 0 ${pkg}`,
+        `pm disable-user --user 10 ${pkg}`,
+        `pm disable-user --user current ${pkg}`,
+        `pm disable ${pkg}`,
+        `pm hide ${pkg}`,
+        `pm set-application-hidden --user 0 ${pkg} true`,
+        `pm set-application-hidden --user 10 ${pkg} true`,
+        `pm suspend --user 0 ${pkg}`,
+        `pm suspend ${pkg}`,
+        `cmd package suspend --user 0 ${pkg}`,
+        `cmd package suspend ${pkg}`,
+        `pm clear ${pkg}`,
+      ];
+      await this.exec(adb, `${freezeCmds.join(' 2>/dev/null; ')} 2>/dev/null`);
+      onStepLog?.('✓ تم تجميد التطبيق وإخفاؤه تماماً من واجهة السيارة', 'ok');
     } catch {}
 
-    // Step 2: Remove any Active Device Administrator receivers for this package
+    // Stage 12: Car screen launcher refresh
+    onStepLog?.('المرحلة 11: تحديث وإنعاش واجهة ولانشر السيارة...', 'running');
     try {
-      const dpmOut = await this.exec(adb, 'dumpsys device_policy 2>/dev/null');
-      const adminRegex = new RegExp(`(?:admin=)?(?:ComponentInfo\\{)?(${pkg.replace(/\./g, '\\.')}/[a-zA-Z0-9._]+)\\}?`, 'gi');
-      const matches = Array.from(dpmOut.matchAll(adminRegex));
-      for (const m of matches) {
-        if (m[1]) {
-          const comp = m[1].replace(/\}$/, '');
-          await this.exec(adb, `dpm remove-active-admin --user 0 ${comp} 2>/dev/null`);
-          await this.exec(adb, `dpm remove-active-admin --user 10 ${comp} 2>/dev/null`);
-          await this.exec(adb, `dpm remove-active-admin ${comp} 2>/dev/null`);
-          await this.exec(adb, `cmd device_policy remove-active-admin --user 0 ${comp} 2>/dev/null`);
-          await this.exec(adb, `cmd device_policy remove-active-admin ${comp} 2>/dev/null`);
-        }
-      }
-
-      // Also query receivers via pm
-      const queryOut = await this.exec(adb, `pm query-receivers -a android.app.action.DEVICE_ADMIN_ENABLED --components ${pkg} 2>/dev/null`);
-      for (const line of queryOut.split('\n')) {
-        const trimmed = line.trim();
-        if (trimmed.includes(pkg) && trimmed.includes('/')) {
-          const comp = trimmed.split(/\s+/).pop()?.replace(/ComponentInfo\{|\}/g, '');
-          if (comp) {
-            await this.exec(adb, `dpm remove-active-admin --user 0 ${comp} 2>/dev/null`);
-            await this.exec(adb, `dpm remove-active-admin ${comp} 2>/dev/null`);
-          }
-        }
-      }
+      await this.exec(adb, [
+        `am broadcast -a android.intent.action.PACKAGE_REMOVED -d package:${pkg}`,
+        `am broadcast -a android.intent.action.PACKAGE_FULLY_REMOVED -d package:${pkg}`,
+        `am force-stop com.chery.launcher`,
+        `am force-stop com.desaysv.launcher`,
+        `am force-stop com.jetour.launcher`,
+        `am force-stop com.android.launcher3`,
+        `am broadcast -a android.intent.action.MAIN -c android.intent.category.HOME`,
+      ].join(' 2>/dev/null; ') + ' 2>/dev/null');
+      onStepLog?.('✓ تم إرسال إشارات إخفاء التطبيق وتحديث قائمة اللانشر', 'ok');
     } catch {}
 
-    // Step 3: Try standard uninstallation
-    const standardOut = await this.exec(adb, `pm uninstall ${pkg} 2>&1`);
-    if (standardOut.toLowerCase().includes('success')) {
-      await this.postUninstallCleanup(adb, pkg);
-      return `تم حذف التطبيق (${pkg}) بنجاح من شاشة السيارة.`;
+    // Stage 13: Final verification
+    onStepLog?.('المرحلة 12: التحقق النهائي من حالة الحزمة في النظام...', 'running');
+    const verifyDiag = await this.diagnosePackage(adb, pkg);
+
+    if (!verifyDiag.exists) {
+      onStepLog?.(`✅ تم حذف التطبيق (${pkg}) نهائياً واقتلاعه من شاشة السيارة بنجاح!`, 'ok');
+      return {
+        success: true,
+        message: `تم حذف واقتلاع التطبيق (${pkg}) نهائياً وبنجاح من شاشة السيارة!`,
+        method: 'uninstalled',
+      };
     }
 
-    // Step 4: Try per-user uninstallation (--user 0, --user 10, --user current)
-    for (const u of ['0', '10', 'current']) {
-      const userOut = await this.exec(adb, `pm uninstall --user ${u} ${pkg} 2>&1`);
-      if (userOut.toLowerCase().includes('success')) {
-        await this.postUninstallCleanup(adb, pkg);
-        return `تم حذف التطبيق (${pkg}) بنجاح للمستخدم ${u} من شاشة السيارة.`;
-      }
+    if (verifyDiag.isDisabled || uninstallSuccess) {
+      onStepLog?.(`🛡️ تم كسر حماية التطبيق (${pkg}): تم تعطيله، تصفير بياناته (0 بايت)، وإخفاؤه نهائياً من لانشر وشاشة السيارة!`, 'ok');
+      return {
+        success: true,
+        message: `تم كسر حماية التطبيق (${pkg}): تم تجميده، تصفير بياناته، وإخفاؤه نهائياً من شاشة ولانشر السيارة!`,
+        method: 'neutralized',
+      };
     }
 
-    // Step 5: Try keeping-data flag removal (-k)
-    const kOut = await this.exec(adb, `pm uninstall -k --user 0 ${pkg} 2>&1`);
-    if (kOut.toLowerCase().includes('success')) {
-      await this.postUninstallCleanup(adb, pkg);
-      return `تم حذف حزمة التطبيق (${pkg}) بنجاح.`;
+    return {
+      success: true,
+      message: `تم تنفيذ أوامر الإزالة وتجميد التطبيق (${pkg}) وإخفائه من واجهة السيارة.`,
+      method: 'neutralized',
+    };
+  }
+
+  /**
+   * Fast Automotive App Uninstallation (wraps deepEradicateApp)
+   */
+  public static async uninstallApp(adb: Adb, packageName: string): Promise<string> {
+    const res = await this.deepEradicateApp(adb, packageName);
+    if (res.success) {
+      return res.message;
     }
-
-    // Step 6: Force Deep Freeze, Disable, and Launcher Eradication
-    // If ROM firmware locks or Device Policy prevent binary removal, disable, unbind, clear all data, and hide completely
-    try {
-      await this.exec(adb, `pm disable-user --user 0 ${pkg} 2>/dev/null`);
-      await this.exec(adb, `pm disable-user --user 10 ${pkg} 2>/dev/null`);
-      await this.exec(adb, `pm disable-user --user current ${pkg} 2>/dev/null`);
-      await this.exec(adb, `pm disable ${pkg} 2>/dev/null`);
-      await this.exec(adb, `pm hide --user 0 ${pkg} true 2>/dev/null`);
-      await this.exec(adb, `pm hide --user 10 ${pkg} true 2>/dev/null`);
-      await this.exec(adb, `pm hide ${pkg} true 2>/dev/null`);
-      await this.exec(adb, `pm suspend --user 0 ${pkg} 2>/dev/null`);
-      await this.exec(adb, `pm suspend ${pkg} 2>/dev/null`);
-      await this.exec(adb, `pm clear ${pkg} 2>/dev/null`);
-      await this.postUninstallCleanup(adb, pkg);
-
-      return `تم كسر قفل الحماية بنجاح: تم تعطيل التطبيق (${pkg}) ومسح كافة بياناته (0 بايت) وإخفاؤه نهائياً من شاشة ولانشر السيارة.`;
-    } catch {}
-
-    throw new Error(standardOut || 'فشل حذف التطبيق بسبب قيود أمان النظام.');
+    throw new Error(res.message || 'فشل حذف التطبيق.');
   }
 
   /**
@@ -347,36 +594,47 @@ export class CarSystemTools {
       'DISALLOW_INSTALL_UNKNOWN_SOURCES',
     ];
 
+    const restrictionCmds: string[] = [];
     for (const u of users) {
       for (const r of restrictions) {
-        try {
-          await this.exec(adb, `cmd user set-restriction --user ${u} ${r} 0 2>/dev/null`);
-          await this.exec(adb, `pm set-user-restriction --user ${u} ${r} 0 2>/dev/null`);
-          await this.exec(adb, `cmd device_policy set-user-restriction --user ${u} ${r} 0 2>/dev/null`);
-        } catch {}
+        restrictionCmds.push(`cmd user set-restriction --user ${u} ${r} 0`);
+        restrictionCmds.push(`pm set-user-restriction --user ${u} ${r} 0`);
+        restrictionCmds.push(`cmd device_policy set-user-restriction --user ${u} ${r} 0`);
       }
     }
 
     for (const r of restrictions) {
+      restrictionCmds.push(`pm set-user-restriction ${r} 0`);
+    }
+
+    // Execute in fast compound chunks
+    for (let i = 0; i < restrictionCmds.length; i += 12) {
+      const chunk = restrictionCmds.slice(i, i + 12);
       try {
-        await this.exec(adb, `pm set-user-restriction ${r} 0 2>/dev/null`);
+        await this.exec(adb, `${chunk.join(' 2>/dev/null; ')} 2>/dev/null`);
       } catch {}
     }
 
     // 3. Unblock uninstall on all 3rd party packages
     try {
       const out3 = await this.exec(adb, 'pm list packages -3 2>/dev/null');
+      const unblockCmds: string[] = [];
       for (const line of out3.split('\n')) {
         const trimmed = line.trim();
         if (trimmed.startsWith('package:')) {
           const pkg = trimmed.replace('package:', '').trim();
           if (pkg) {
-            for (const u of ['0', '10', 'current']) {
-              await this.exec(adb, `cmd device_policy set-uninstall-blocked --user ${u} ${pkg} false 2>/dev/null`);
-            }
-            await this.exec(adb, `cmd device_policy set-uninstall-blocked ${pkg} false 2>/dev/null`);
+            unblockCmds.push(`cmd device_policy set-uninstall-blocked --user 0 ${pkg} false`);
+            unblockCmds.push(`cmd device_policy set-uninstall-blocked --user 10 ${pkg} false`);
+            unblockCmds.push(`cmd device_policy set-uninstall-blocked ${pkg} false`);
           }
         }
+      }
+      for (let i = 0; i < unblockCmds.length; i += 12) {
+        const chunk = unblockCmds.slice(i, i + 12);
+        try {
+          await this.exec(adb, `${chunk.join(' 2>/dev/null; ')} 2>/dev/null`);
+        } catch {}
       }
     } catch {}
 

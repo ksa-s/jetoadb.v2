@@ -1,6 +1,6 @@
 import React from 'react';
 import { DeviceInfo } from '../types';
-import { Power, Cpu, Smartphone, Monitor, Car, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
+import { Power, Cpu, Smartphone, Monitor, Car, RefreshCw, ShieldCheck, Zap, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   deviceInfo: DeviceInfo | null;
@@ -12,6 +12,7 @@ interface HeaderProps {
   onOpenApps: () => void;
   onOpenPermissions?: () => void;
   onOpenSteeringWheel?: () => void;
+  onOpenMagicUninstaller?: () => void;
   onOpenHelp: () => void;
 }
 
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenApps,
   onOpenPermissions,
   onOpenSteeringWheel,
+  onOpenMagicUninstaller,
   onOpenHelp,
 }) => {
   return (
@@ -81,6 +83,16 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center flex-wrap gap-2 w-full md:w-auto justify-end">
           {/* Quick nav links */}
           <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={onOpenMagicUninstaller}
+              disabled={!isConnected}
+              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-rose-950 to-purple-950 hover:from-rose-900 hover:to-purple-900 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-500/50 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm shadow-rose-950 cursor-pointer"
+              title="أداة سحرية لإزالة ومحو التطبيقات المستعصية التي ترفض الحذف العادي"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              <span>ساحر حذف المستعصية 🪄</span>
+            </button>
+
             <button
               onClick={onOpenSteeringWheel}
               disabled={!isConnected}

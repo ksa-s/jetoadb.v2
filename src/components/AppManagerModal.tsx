@@ -28,6 +28,7 @@ interface AppManagerModalProps {
   adb: Adb | null;
   onLog: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void;
   onSelectForPermissions?: (pkg: string) => void;
+  onOpenMagicEradicator?: (pkg: string) => void;
 }
 
 export const AppManagerModal: React.FC<AppManagerModalProps> = ({
@@ -36,6 +37,7 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
   adb,
   onLog,
   onSelectForPermissions,
+  onOpenMagicEradicator,
 }) => {
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -159,9 +161,6 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
 
   const handleClear = async (pkg: string) => {
     if (!adb) return;
-    const confirm = window.confirm(`هل أنت متأكد من مسح بيانات التطبيق (${pkg}) بالكامل؟`);
-    if (!confirm) return;
-
     setActionLoading(`clear-${pkg}`);
     try {
       const msg = await CarSystemTools.clearAppData(adb, pkg);
@@ -177,18 +176,25 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
 
   const handleUninstall = async (pkg: string) => {
     if (!adb) return;
-    const confirm = window.confirm(`هل أنت متأكد من إلغاء تثبيت وحذف التطبيق (${pkg}) من الشاشة نهائياً؟`);
-    if (!confirm) return;
-
     setActionLoading(`uninstall-${pkg}`);
+    setFeedback({ type: 'success', message: `جاري تنفيذ مسح وإلغاء تثبيت الحزمة (${pkg})...` });
     try {
-      const msg = await CarSystemTools.uninstallApp(adb, pkg);
-      onLog(msg, 'success');
-      setFeedback({ type: 'success', message: msg });
-      setApps(prev => prev.filter(a => a.packageName !== pkg));
+      const res = await CarSystemTools.deepEradicateApp(adb, pkg, (msg, type) => {
+        onLog(msg, type === 'ok' ? 'success' : type === 'fail' ? 'error' : 'info');
+      });
+      if (res.success) {
+        onLog(res.message, 'success');
+        setFeedback({ type: 'success', message: res.message });
+        setApps(prev => prev.filter(a => a.packageName !== pkg));
+      } else {
+        throw new Error(res.message);
+      }
     } catch (e: any) {
       onLog(`فشل الحذف: ${e.message || e}`, 'error');
-      setFeedback({ type: 'error', message: e.message || 'فشل حذف التطبيق' });
+      setFeedback({ 
+        type: 'error', 
+        message: `فشل الحذف العادي للتطبيق (${pkg}). يمكنك استخدام "ساحر حذف المستعصية 🪄" لتجميده وإخفائه قسرياً.` 
+      });
     } finally {
       setActionLoading(null);
     }
@@ -251,6 +257,15 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
               />
               <span>عرض تطبيقات النظام</span>
             </label>
+
+            <button
+              onClick={() => onOpenMagicEradicator?.('')}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-950 to-purple-950 hover:from-rose-900 hover:to-purple-900 border border-rose-500/50 text-rose-200 font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-rose-950/40"
+              title="ساحر لحذف واقتلاع التطبيقات المستعصية التي ترفض الحذف العادي"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              <span>🪄 ساحر حذف المستعصية</span>
+            </button>
 
             <button
               onClick={handleUnlockDevicePolicy}
@@ -398,6 +413,16 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
                       <Eraser className="w-3 h-3" />
                     )}
                     <span>مسح</span>
+                  </button>
+
+                  <button
+                    onClick={() => onOpenMagicEradicator?.(app.packageName)}
+                    disabled={actionLoading !== null}
+                    className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-rose-950 to-purple-950 hover:from-rose-900 hover:to-purple-900 border border-rose-500/50 text-rose-300 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-sm shadow-rose-950/30"
+                    title="المحو والمسح السحري الجذري (12 مرحلة تشمل فك قيود DPM والتجميد القسري)"
+                  >
+                    <Sparkles className="w-3 h-3 text-rose-400" />
+                    <span>محو سحري 🪄</span>
                   </button>
 
                   {!app.isSystem && (

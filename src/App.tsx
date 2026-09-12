@@ -15,6 +15,7 @@ import { AppManagerModal } from './components/AppManagerModal';
 import { PermissionsModal } from './components/PermissionsModal';
 import { SteeringWheelModal } from './components/SteeringWheelModal';
 import { HelpAndGuideModal } from './components/HelpAndGuideModal';
+import { MagicUninstallerModal } from './components/MagicUninstallerModal';
 import { Adb } from '@yume-chan/adb';
 import { Package, ShieldCheck, Terminal, Sparkles } from 'lucide-react';
 
@@ -42,6 +43,8 @@ export default function App() {
   const [isAppsOpen, setIsAppsOpen] = useState(false);
   const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
   const [isSteeringWheelOpen, setIsSteeringWheelOpen] = useState(false);
+  const [isMagicUninstallerOpen, setIsMagicUninstallerOpen] = useState(false);
+  const [magicTargetPackage, setMagicTargetPackage] = useState<string>('');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   // Logs
@@ -383,6 +386,10 @@ export default function App() {
         onOpenApps={() => setIsAppsOpen(true)}
         onOpenPermissions={() => setIsPermissionsOpen(true)}
         onOpenSteeringWheel={() => setIsSteeringWheelOpen(true)}
+        onOpenMagicUninstaller={() => {
+          setMagicTargetPackage('');
+          setIsMagicUninstallerOpen(true);
+        }}
         onOpenHelp={() => setIsHelpOpen(true)}
       />
 
@@ -555,6 +562,21 @@ export default function App() {
         onClose={() => setIsAppsOpen(false)}
         adb={adb}
         onLog={addLog}
+        onOpenMagicEradicator={(pkg) => {
+          setMagicTargetPackage(pkg || '');
+          setIsMagicUninstallerOpen(true);
+        }}
+      />
+
+      <MagicUninstallerModal
+        isOpen={isMagicUninstallerOpen}
+        onClose={() => setIsMagicUninstallerOpen(false)}
+        adb={adb}
+        onLog={addLog}
+        initialPackage={magicTargetPackage}
+        onAppRemoved={(pkg) => {
+          setInstalledApps(prev => prev.filter(a => a.packageName !== pkg));
+        }}
       />
 
       <HelpAndGuideModal
