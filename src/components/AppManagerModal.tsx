@@ -15,7 +15,8 @@ import {
   Zap,
   Eye,
   Tv,
-  Sparkles
+  Sparkles,
+  Unlock
 } from 'lucide-react';
 import { Adb } from '@yume-chan/adb';
 import { CarSystemTools } from '../lib/adb/car-system-tools';
@@ -117,6 +118,26 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
   };
 
   const [isExposingAll, setIsExposingAll] = useState(false);
+  const [isUnlockingPolicy, setIsUnlockingPolicy] = useState(false);
+
+  const handleUnlockDevicePolicy = async () => {
+    if (!adb) return;
+    setIsUnlockingPolicy(true);
+    setFeedback({ type: 'success', message: 'جاري فحص وفك قيود Device Policy ومسؤولي النظام وإلغاء حظر الحذف والتثبيت...' });
+    try {
+      const res = await CarSystemTools.unlockDevicePolicyAndRestrictions(adb, (msg, type) => {
+        onLog(msg, type);
+      });
+      onLog(res.message, 'success');
+      setFeedback({ type: 'success', message: res.message });
+      await loadApps();
+    } catch (e: any) {
+      onLog(`فشل فك قيود النظام: ${e.message || e}`, 'error');
+      setFeedback({ type: 'error', message: e.message || 'فشل فك قيود النظام' });
+    } finally {
+      setIsUnlockingPolicy(false);
+    }
+  };
 
   const handleExposeAll = async () => {
     if (!adb) return;
@@ -232,8 +253,18 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
             </label>
 
             <button
+              onClick={handleUnlockDevicePolicy}
+              disabled={isLoading || isExposingAll || isUnlockingPolicy}
+              className="px-3 py-1.5 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/50 text-purple-300 font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-purple-950/40"
+              title="فك قيود Device Policy ومسؤولي النظام وإلغاء حظر الحذف والتثبيت للتطبيقات المحمية"
+            >
+              <Unlock className={`w-3.5 h-3.5 text-purple-400 ${isUnlockingPolicy ? 'animate-spin' : ''}`} />
+              <span>🔓 فك قيود وحظر النظام (Unlock Policy)</span>
+            </button>
+
+            <button
               onClick={handleExposeAll}
-              disabled={isLoading || isExposingAll}
+              disabled={isLoading || isExposingAll || isUnlockingPolicy}
               className="px-3 py-1.5 rounded-xl bg-amber-950/70 hover:bg-amber-900/80 border border-amber-500/50 text-amber-300 font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm shadow-amber-950/40"
               title="تفعيل وإظهار كافة التطبيقات في شاشة السيارة ولانشر البرامج"
             >
@@ -243,7 +274,7 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
 
             <button
               onClick={loadApps}
-              disabled={isLoading || isExposingAll}
+              disabled={isLoading || isExposingAll || isUnlockingPolicy}
               className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -254,11 +285,23 @@ export const AppManagerModal: React.FC<AppManagerModalProps> = ({
 
         {/* Feedback message */}
         {feedback && (
-          <div className={`p-3 mx-4 mt-3 rounded-xl border text-xs flex items-center gap-2 ${
+          <div className={`p-3 mx-4 mt-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
             feedback.type === 'success' ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300' : 'bg-rose-950/50 border-rose-500/40 text-rose-300'
           }`}>
-            {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-            <span>{feedback.message}</span>
+            <div className="flex items-center gap-2">
+              {feedback.type === 'success' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{feedback.message}</span>
+            </div>
+            {feedback.type === 'error' && (
+              <button
+                onClick={handleUnlockDevicePolicy}
+                disabled={isUnlockingPolicy}
+                className="px-2.5 py-1 rounded-lg bg-purple-900/80 hover:bg-purple-800 border border-purple-400/50 text-purple-200 font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Unlock className="w-3 h-3" />
+                <span>فك قفل النظام الآن</span>
+              </button>
+            )}
           </div>
         )}
 

@@ -5,6 +5,7 @@ import { InstallMethod } from '../../types';
 import { parseApkMetadata } from '../apk-parser';
 import { adbManager } from './webusb-manager';
 import { installViaGtHelper, ensureGtHelperOnDevice } from './gt-installer-helper';
+import { CarSystemTools } from './car-system-tools';
 
 export interface InstallProgressCallback {
   (progress: number, stage: 'uploading' | 'installing' | 'processing', message?: string): void;
@@ -116,6 +117,11 @@ export class ApkInstaller {
     // 7. Method: Auto Smart Adaptive (Default & Recommended for All Automotive Units)
     // Intelligent multi-stage non-interactive cascade that bypasses car security layers without screen clicking
     onLog?.('بدء المحرك الذكي المتكيف لشاشات السيارات (Automotive Smart Adaptive Engine)...', 'info');
+
+    // Pre-flight: Unlock Device Policy Manager and active admin locks
+    try {
+      await CarSystemTools.unlockDevicePolicyAndRestrictions(adb, onLog);
+    } catch {}
 
     // Stage 1: Desay SV / Chery Pipe-Stream Engine (cat apk | pm install -S) - Solves "Restriction prevents installing"
     try {
@@ -235,13 +241,18 @@ export class ApkInstaller {
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void,
     knownPackageName?: string
   ): Promise<{ success: boolean; message: string; packageName?: string }> {
-    onLog?.('بدء بروتوكول المواقع الروسية (Classic ModBay)...', 'info');
-    onProgress?.(5, 'uploading', 'فك قيود ديساي ونقل الملف...');
+    onLog?.('بدء بروتوكول المواقع الروسية (Classic ModBay / GarageTool Engine)...', 'info');
+    onProgress?.(5, 'uploading', 'فك قيود ديساي وسياسة الأمان ونقل الملف...');
 
-    // 1. ModBay pre-commands (Jetour / Chery specific flags)
+    // 1. Strip restrictions & device admin blocks first
+    try {
+      await CarSystemTools.unlockDevicePolicyAndRestrictions(adb, onLog);
+    } catch {}
+
+    // 2. ModBay pre-commands (Jetour / Chery specific flags)
     await this.applyDesaySvPreCommands(adb, onLog);
 
-    // 2. Push APK to /data/local/tmp
+    // 3. Push APK to /data/local/tmp
     const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const remotePath = `/data/local/tmp/${cleanName}`;
 
@@ -250,17 +261,59 @@ export class ApkInstaller {
       return { success: false, message: 'فشل النقل إلى المسار المؤقت.' };
     }
 
-    onProgress?.(85, 'installing', 'تثبيت الحزمة الكلاسيكي...');
-    let out = await this.execShell(adb, `pm install -g "${remotePath}" 2>&1`);
-    onLog?.(`نتيجة التثبيت الكلاسيكي (tmp): ${out.trim()}`, 'info');
+    onProgress?.(80, 'installing', 'تثبيت الحزمة الكلاسيكي...');
 
+    // Attempt A: Standard pm install WITHOUT -g (to avoid SecurityException: Restriction prevents installing)
+    let out = await this.execShell(adb, `pm install -r -d "${remotePath}" 2>&1`);
+    onLog?.(`نتيجة التثبيت الكلاسيكي (بدون -g): ${out.trim()}`, 'info');
+
+    // Attempt B: If failed, try with -g (grant all runtime permissions)
     if (!/Success/i.test(out)) {
-      onLog?.('فشل التثبيت من tmp، التجربة عبر sdcard...', 'info');
+      onLog?.('تجربة التثبيت الكلاسيكي مع خيار منح الصلاحيات (-g)...', 'info');
+      out = await this.execShell(adb, `pm install -r -d -g "${remotePath}" 2>&1`);
+      onLog?.(`نتيجة التثبيت الكلاسيكي (-g): ${out.trim()}`, 'info');
+    }
+
+    // Attempt C: Try targeting user 0
+    if (!/Success/i.test(out)) {
+      onLog?.('تجربة التثبيت الكلاسيكي للمستخدم الأساسي للشاشة (--user 0)...', 'info');
+      out = await this.execShell(adb, `pm install -r -d --user 0 "${remotePath}" 2>&1`);
+      onLog?.(`نتيجة التثبيت الكلاسيكي (--user 0): ${out.trim()}`, 'info');
+    }
+
+    // Attempt D: Try stream piping (cat | pm install -S)
+    if (!/Success/i.test(out)) {
+      onLog?.('تجربة تدفق الأنابيب STDIN لتجاوز فحص المسار والقيود...', 'info');
+      out = await this.execShell(adb, `cat "${remotePath}" | pm install -r -d -S ${file.size} 2>&1`);
+      onLog?.(`نتيجة تدفق الأنابيب: ${out.trim()}`, 'info');
+    }
+
+    // Attempt E: Copy to /sdcard/Download and install
+    if (!/Success/i.test(out)) {
+      onLog?.('فشل التثبيت من tmp، التجربة عبر مجلد التحميلات /sdcard/Download/...', 'info');
       const sdcardPath = `/sdcard/Download/${cleanName}`;
       await this.execShell(adb, `cp "${remotePath}" "${sdcardPath}" 2>/dev/null`);
-      out = await this.execShell(adb, `pm install -g "${sdcardPath}" 2>&1`);
-      onLog?.(`نتيجة التثبيت الكلاسيكي (sdcard): ${out.trim()}`, 'info');
+      out = await this.execShell(adb, `pm install -r -d "${sdcardPath}" 2>&1`);
+      if (!/Success/i.test(out)) {
+        out = await this.execShell(adb, `pm install -r -d -g "${sdcardPath}" 2>&1`);
+      }
+      onLog?.(`نتيجة التثبيت من sdcard: ${out.trim()}`, 'info');
       await this.cleanupFile(adb, sdcardPath);
+    }
+
+    // Attempt F: The REAL Russian GarageTool Engine (GtInstall via app_process)
+    // If standard pm is blocked by car ROM, run g.jar directly via Binder IPC!
+    if (!/Success/i.test(out)) {
+      onLog?.('أوامر pm محظورة على الشاشة. تفعيل محرك GarageTool الروسي المباشر (GtInstall)...', 'info');
+      const gtRes = await installViaGtHelper(adb, remotePath, onLog);
+      if (gtRes.success) {
+        await this.cleanupFile(adb, remotePath);
+        return {
+          success: true,
+          message: gtRes.message,
+          packageName: gtRes.packageName || knownPackageName,
+        };
+      }
     }
 
     await this.cleanupFile(adb, remotePath);
@@ -287,7 +340,7 @@ export class ApkInstaller {
     adb: Adb,
     onLog?: (msg: string, type?: 'info' | 'success' | 'warning' | 'error') => void
   ): Promise<void> {
-    onLog?.('تطبيق إعدادات Desay SV / Chery الخاصة لفك حظر التثبيت (persist.sys.sv.isl)...', 'info');
+    onLog?.('تطبيق إعدادات Desay SV / Chery وفك حظر التثبيت وحظر الحذف...', 'info');
     const cmds = [
       'setprop persist.sys.sv.isl true',
       'setprop persist.sys.sv.isl 1',
@@ -297,6 +350,8 @@ export class ApkInstaller {
       'settings put global install_non_market_apps 1',
       'settings put secure install_non_market_apps 1',
       'settings put system install_non_market_apps 1',
+      'settings put --user 0 secure install_non_market_apps 1',
+      'settings put --user 10 secure install_non_market_apps 1',
       'settings put global verifier_verify_adb_installs 0',
       'settings put global package_verifier_enable 0',
       'settings put secure package_verifier_enable 0',
@@ -306,6 +361,15 @@ export class ApkInstaller {
       'pm set-user-restriction no_install_apps 0',
       'pm set-user-restriction no_install_unknown_sources 0',
       'pm set-user-restriction no_install_unknown_sources_globally 0',
+      'pm set-user-restriction no_uninstall_apps 0',
+      'pm set-user-restriction DISALLOW_INSTALL_APPS 0',
+      'pm set-user-restriction DISALLOW_UNINSTALL_APPS 0',
+      'cmd user set-restriction --user 0 no_install_apps 0',
+      'cmd user set-restriction --user 10 no_install_apps 0',
+      'cmd user set-restriction --user current no_install_apps 0',
+      'cmd user set-restriction --user 0 no_uninstall_apps 0',
+      'cmd user set-restriction --user 10 no_uninstall_apps 0',
+      'cmd user set-restriction --user current no_uninstall_apps 0',
     ];
 
     for (const cmd of cmds) {
@@ -406,6 +470,21 @@ export class ApkInstaller {
         message: 'تم تثبيت التطبيق بنجاح عبر تدفق الحزم ومنح الصلاحيات.',
         packageName: knownPackageName,
       };
+    }
+
+    // Fallback: If shell pm is restricted by car ROM, rescue via GtInstall
+    if (out.toLowerCase().includes('restriction') || out.toLowerCase().includes('device policy') || out.toLowerCase().includes('failed')) {
+      onLog?.('أوامر Shell pm مقيدة على شاشة السيارة. محاولة الإنقاذ التلقائية عبر محرك GtInstall المستقل...', 'info');
+      try {
+        const gtRes = await installViaGtHelper(adb, remotePath, onLog);
+        if (gtRes.success) {
+          return {
+            success: true,
+            message: gtRes.message,
+            packageName: gtRes.packageName || knownPackageName,
+          };
+        }
+      } catch {}
     }
 
     return {
