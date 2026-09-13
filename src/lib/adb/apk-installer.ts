@@ -616,9 +616,8 @@ export class ApkInstaller {
     out = await this.execShell(adb, `cat "${remotePath}" | pm install -r -d -g -S ${fileSize} 2>&1`);
     onLog?.(`استجابة مدير الحزم (المحاولة 4): ${out.trim()}`, 'info');
 
-    await this.cleanupFile(adb, remotePath);
-
     if (/Success/i.test(out)) {
+      await this.cleanupFile(adb, remotePath);
       return {
         success: true,
         message: 'تم تثبيت التطبيق بنجاح عبر تدفق الحزم ومنح الصلاحيات.',
@@ -626,11 +625,12 @@ export class ApkInstaller {
       };
     }
 
-    // Fallback: If shell pm is restricted by car ROM, rescue via GtInstall
+    // Fallback: If shell pm is restricted by car ROM, rescue via GtInstall BEFORE deleting remotePath
     if (out.toLowerCase().includes('restriction') || out.toLowerCase().includes('device policy') || out.toLowerCase().includes('failed')) {
       onLog?.('أوامر Shell pm مقيدة على شاشة السيارة. محاولة الإنقاذ التلقائية عبر محرك GtInstall المستقل...', 'info');
       try {
         const gtRes = await installViaGtHelper(adb, remotePath, onLog);
+        await this.cleanupFile(adb, remotePath);
         if (gtRes.success) {
           return {
             success: true,
@@ -640,6 +640,8 @@ export class ApkInstaller {
         }
       } catch {}
     }
+
+    await this.cleanupFile(adb, remotePath);
 
     return {
       success: false,
