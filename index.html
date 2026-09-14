@@ -1,21 +1,69 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ar" dir="rtl">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sam Software - Car ADB Manager | إدارة شاشات السيارات</title>
-    <meta name="description" content="أداة ويب احترافية لإدارة شاشات وكمبيوتر السيارات عبر ADB وWebUSB وتثبيت التطبيقات وحل مشكلة Socket open failed" />
-    <meta property="og:title" content="Sam Software - Car ADB Manager" />
-    <meta property="og:description" content="أداة ويب احترافية لإدارة شاشات وكمبيوتر السيارات عبر ADB وWebUSB وتثبيت التطبيقات وحل مشكلة Socket open failed" />
-    <meta property="og:type" content="website" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  </head>
-  <body class="bg-slate-950 text-slate-100 font-['Cairo',sans-serif] antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+    <title>Garage Tool — أداة تثبيت التطبيقات</title>
+    <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🚗 Garage Tool</h1>
+            <p class="subtitle">تثبيت التطبيقات على شاشات السيارات عبر USB</p>
+            <button id="langToggle" class="lang-btn">EN</button>
+        </header>
 
+        <!-- اختيار الموديل -->
+        <section class="card">
+            <h2 data-i18n="selectModel">اختر موديل السيارة</h2>
+            <select id="modelSelect" class="model-select">
+                <option value="">— اختر —</option>
+                <option value="jetour-t2">Jetour T2</option>
+                <option value="jetour-x70">Jetour X70</option>
+                <option value="changan-cs55">Changan CS55 Plus</option>
+                <option value="haval-h6">Haval H6</option>
+                <option value="geely-coolray">Geely Coolray</option>
+                <option value="other">أخرى (عام)</option>
+            </select>
+            <p id="modelHint" class="hint"></p>
+        </section>
+
+        <!-- الاتصال -->
+        <section class="card">
+            <h2 data-i18n="connect">الاتصال بالجهاز</h2>
+            <button id="connectBtn" class="btn btn-primary" disabled>
+                <span data-i18n="connectBtn">اتصال</span>
+            </button>
+            <button id="disconnectBtn" class="btn btn-secondary" hidden>
+                <span data-i18n="disconnectBtn">قطع الاتصال</span>
+            </button>
+            <div id="deviceInfo" class="device-info" hidden>
+                <span data-i18n="deviceModel">الموديل:</span>
+                <strong id="deviceModelText">—</strong>
+            </div>
+        </section>
+
+        <!-- رفع APK -->
+        <section class="card">
+            <h2 data-i18n="uploadApk">رفع ملفات APK</h2>
+            <div id="dropZone" class="drop-zone">
+                <p data-i18n="dropText">اسحب الملفات هنا أو انقر للاختيار</p>
+                <input type="file" id="apkInput" accept=".apk" multiple hidden />
+            </div>
+            <ul id="apkList" class="apk-list"></ul>
+            <button id="installBtn" class="btn btn-success" disabled>
+                <span data-i18n="installBtn">تثبيت</span>
+            </button>
+        </section>
+
+        <!-- طرفية السجل -->
+        <section class="card">
+            <h2 data-i18n="terminal">سجل العمليات</h2>
+            <div id="terminal" class="terminal"></div>
+        </section>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
