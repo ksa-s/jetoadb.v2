@@ -58,10 +58,18 @@ public class GtInstall {
             out.close();
 
             Intent intent = new Intent("com.garagetool.INSTALL_RESULT");
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(
-                context, sessionId, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE
-            );
+            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+// FLAG_MUTABLE متاح فقط من API 31+
+if (android.os.Build.VERSION.SDK_INT >= 31) {
+    try {
+        flags |= PendingIntent.class.getField("FLAG_MUTABLE").getInt(null);
+    } catch (Exception e) {
+        // تجاهل - نستخدم FLAG_UPDATE_CURRENT وحده
+    }
+}
+PendingIntent pendingIntent = PendingIntent.getBroadcast(
+    context, sessionId, intent, flags
+);
 
             session.commit(pendingIntent.getIntentSender());
             session.close();
