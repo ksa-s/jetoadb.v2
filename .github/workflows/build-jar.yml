@@ -21,14 +21,14 @@ jobs:
           distribution: 'temurin'
 
       - name: Download android.jar
-  run: |
-    wget -q https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
-    if [ ! -s android.jar ]; then
-      echo "Primary URL failed, trying alternative..."
-      wget -q https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar
-    fi
-    ls -lh android.jar
-    file android.jar
+        run: |
+          wget -q https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
+          if [ ! -s android.jar ]; then
+          echo "Primary URL failed, trying alternative..."
+          wget -q https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar
+          fi
+          ls -lh android.jar
+          file android.jar
     
       - name: Compile GtInstall.java
         run: |
