@@ -352,3 +352,32 @@ tabSystem.addEventListener("click", () => {
 
 // زر تحديث التطبيقات
 refreshAppsBtn.addEventListener("click", () => loadApps(true));
+
+// زر اختبار (مؤقت)
+window.testPmInstall = async function() {
+    if (!installer || !installer.adb) {
+        console.log("No ADB connection");
+        return;
+    }
+
+    // اختبر أمر بسيط
+    const out1 = await installer.runShell(['echo "HELLO FROM SHELL"']);
+    console.log("Test 1 (echo):", JSON.stringify(out1));
+
+    // اختبر ls
+    const out2 = await installer.runShell(['ls -la /data/local/tmp/']);
+    console.log("Test 2 (ls):", JSON.stringify(out2));
+
+    // اختبر pm
+    const out3 = await installer.runShell(['pm list packages | head -3']);
+    console.log("Test 3 (pm):", JSON.stringify(out3));
+
+    // اختبر pm install
+    const out4 = await installer.runShell([
+        'cd /data/local/tmp',
+        'pm install "basse.apk"'
+    ]);
+    console.log("Test 4 (pm install):", JSON.stringify(out4));
+};
+
+console.log("👉 testPmInstall() متاح في Console");
