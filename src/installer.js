@@ -58,6 +58,7 @@ export class AdbInstaller {
         this.adb = null;
         this.log = logFn || console.log;
         this.device = null;
+     }
             // ==================== إدارة التطبيقات ====================
 
     // الحصول على قائمة التطبيقات (user أو system)
