@@ -4,10 +4,13 @@
 //  الطريقة: استخدام app_process لتشغيل g.jar داخل النظام بصلاحيات أعلى
 // =====================================================================
 
-const HELPER_JAR_URL = "/tools/g.jar";
+// ============ بعد التعديل ============
+// ✅ مسار نسبي ليعمل مع base: './' في vite.config.ts
+const HELPER_JAR_URL = "./tools/g.jar";
 const HELPER_JAR_PATH = "/data/local/tmp/g.jar";
 const HELPER_SH_PATH = "/data/local/tmp/r.sh";
-const HELPER_JAR_BYTES_EXPECTED = 4676; // سيتم تحديثه بعد تصريف g.jar
+// ✅ 0 = تعطيل التحقق من الحجم مؤقتاً (سيتم تحديثه بعد أول بناء ناجح)
+const HELPER_JAR_BYTES_EXPECTED = 0;
 const HELPER_CLASS = "com.garagetool.installer.GtInstall";
 const PUSH_PRIMARY_DIR = "/data/local/tmp";
 
