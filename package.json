@@ -1,5 +1,5 @@
 {
-  "name": "jetoadb-v3",
+  "name": "jetoadb-v2",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@yume-chan/adb": "^2.6.3",
-    "@yume-chan/adb-daemon-webusb": "^2.6.3",
+    "@yume-chan/adb-daemon-webusb": "^2.3.2",
     "@yume-chan/adb-credential-web": "^2.1.0"
   },
   "devDependencies": {
