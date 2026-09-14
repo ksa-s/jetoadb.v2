@@ -369,10 +369,10 @@ export class AdbInstaller {
             }
         }
 
-        this.log(`> pm install "${remoteName}"`, "prompt");
-        outputText = await this.runShell([
-            `cd ${PUSH_PRIMARY_DIR}`,
-            `cat "${remoteName}" | pm install -S ${apkBytes.length}`
+                this.log(`> pm install "${remoteName}" (${apkBytes.length} bytes)`, "prompt");
+                outputText = await this.runShell([
+                `cd ${PUSH_PRIMARY_DIR}`,
+                `cat "${remoteName}" | pm install -S ${apkBytes.length}`
         ]);
 
         installed = outputText.includes("Success");
