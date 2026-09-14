@@ -24,12 +24,18 @@ jobs:
 
       - name: Download android.jar
         run: |
-          # نستخدم android-30 (يعمل مع كل الكود)
-          wget -q --timeout=60 https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar
+          # تحميل android-30 (يعمل مع كود GtInstall.java)
+          wget -q --timeout=60 https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar || \
+          wget -q --timeout=60 https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
+          
+          # التحقق من أن الملف تم تحميله وحجمه معقول (> 1 MB)
           if [ ! -s android.jar ] || [ $(stat -c%s android.jar) -lt 1000000 ]; then
-            echo "Trying alternative..."
-            wget -q --timeout=60 https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
+            echo "ERROR: android.jar is too small or empty!"
+            ls -lh android.jar
+            exit 1
           fi
+          
+          echo "=== android.jar loaded successfully ==="
           ls -lh android.jar
           file android.jar
 
