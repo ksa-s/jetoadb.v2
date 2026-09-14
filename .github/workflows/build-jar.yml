@@ -24,13 +24,12 @@ jobs:
 
       - name: Download android.jar
         run: |
-          # محاولة تحميل android.jar من عدة مصادر
-          wget -q --timeout=30 https://github.com/Sable/android-platforms/raw/master/android-33/android.jar -O android.jar || \
-          wget -q --timeout=30 https://github.com/Sable/android-platforms/raw/master/android-32/android.jar -O android.jar || \
-          wget -q --timeout=30 https://github.com/Sable/android-platforms/raw/master/android-31/android.jar -O android.jar || \
-          wget -q --timeout=30 https://github.com/AndroidSDKSources/android-sdk-sources-for-api-level-31/raw/master/android.jar -O android.jar || \
-          echo "All URLs failed" && exit 1
-          
+          # نستخدم android-30 (يعمل مع كل الكود)
+          wget -q --timeout=60 https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar
+          if [ ! -s android.jar ] || [ $(stat -c%s android.jar) -lt 1000000 ]; then
+            echo "Trying alternative..."
+            wget -q --timeout=60 https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
+          fi
           ls -lh android.jar
           file android.jar
 
