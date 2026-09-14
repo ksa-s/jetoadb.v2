@@ -4,13 +4,10 @@
 //  الطريقة: استخدام app_process لتشغيل g.jar داخل النظام بصلاحيات أعلى
 // =====================================================================
 
-// ============ بعد التعديل ============
-// ✅ مسار نسبي ليعمل مع base: './' في vite.config.ts
-const HELPER_JAR_URL = "./tools/g.jar";
+const HELPER_JAR_URL = "/tools/g.jar";
 const HELPER_JAR_PATH = "/data/local/tmp/g.jar";
 const HELPER_SH_PATH = "/data/local/tmp/r.sh";
-// ✅ 0 = تعطيل التحقق من الحجم مؤقتاً (سيتم تحديثه بعد أول بناء ناجح)
-const HELPER_JAR_BYTES_EXPECTED = 0;
+const HELPER_JAR_BYTES_EXPECTED = 4676; // سيتم تحديثه بعد تصريف g.jar
 const HELPER_CLASS = "com.garagetool.installer.GtInstall";
 const PUSH_PRIMARY_DIR = "/data/local/tmp";
 
@@ -246,3 +243,62 @@ function helperOtkazText(r) {
         }
     }
 */
+محتويات ملف .github/workflows/build-jar.yml
+name: Build GtInstall.jar
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'GtInstall.java'
+      - '.github/workflows/build-jar.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      - name: Download android.jar
+        run: |
+          wget -q https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
+          if [ ! -s android.jar ]; then
+          echo "Primary URL failed, trying alternative..."
+          wget -q https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar
+          fi
+          ls -lh android.jar
+          file android.jar
+    
+      - name: Compile GtInstall.java
+        run: |
+          mkdir -p build/com/garagetool/installer
+          javac -source 8 -target 8 -cp android.jar -d build GtInstall.java
+
+      - name: Package into g.jar
+        run: |
+          cd build
+          jar cf ../g.jar com/garagetool/installer/GtInstall.class
+          cd ..
+          ls -lh g.jar
+          unzip -l g.jar
+
+      - name: Copy to public/tools/
+        run: |
+          mkdir -p public/tools
+          cp g.jar public/tools/g.jar
+          ls -lh public/tools/g.jar
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/tools/g.jar
+          git diff --quiet && git diff --staged --quiet || git commit -m "Build: auto-compile g.jar from GtInstall.java"
+          git push
