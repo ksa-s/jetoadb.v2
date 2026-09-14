@@ -27,8 +27,36 @@ public class GtInstall {
 
         try {
             Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-            Object activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
-            Context context = (Context) activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
+            Object activityThread = null;
+            Context context = null;
+
+                // المحاولة 1: currentActivityThread (الأكثر شيوعاً)
+        try {
+            activityThread = activityThreadClass.getMethod("currentActivityThread").invoke(null);
+            } catch (Exception e1) {
+                // المحاولة 2: systemMain (بعض الإصدارات)
+        try {
+            activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
+            } catch (Exception e2) {
+            System.out.println("GT_INSTALL_FAIL NO_ACTIVITY_THREAD");
+            System.out.println("GT_RC 1");
+            return;
+        }
+    }
+
+                // الحصول على Context
+        try {
+            context = (Context) activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
+        } catch (Exception e) {
+                // محاولة بديلة: getApplication
+        try {
+            context = (Context) activityThreadClass.getMethod("getApplication").invoke(activityThread);
+        } catch (Exception e2) {
+            System.out.println("GT_INSTALL_FAIL NO_CONTEXT: " + e.getMessage());
+            System.out.println("GT_RC 1");
+            return;
+        }
+    }
 
             if (context == null) {
                 System.out.println("GT_INSTALL_FAIL NO_CONTEXT");
