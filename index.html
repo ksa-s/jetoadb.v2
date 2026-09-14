@@ -4,7 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sam Soft — أداة تثبيت التطبيقات</title>
-    <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
     <div class="container">
@@ -55,6 +54,28 @@
             <button id="installBtn" class="btn btn-success" disabled>
                 <span data-i18n="installBtn">تثبيت</span>
             </button>
+        </section>
+
+        <!-- إدارة التطبيقات -->
+        <section class="card" id="appsManagerCard" hidden>
+            <h2>📱 إدارة التطبيقات</h2>
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="user" id="tabUser">
+                    <span data-i18n="userApps">التطبيقات المثبّتة</span>
+                    <span class="badge" id="userAppsCount">0</span>
+                </button>
+                <button class="tab-btn" data-tab="system" id="tabSystem">
+                    <span data-i18n="systemApps">تطبيقات النظام</span>
+                    <span class="badge" id="systemAppsCount">0</span>
+                </button>
+                <button class="btn btn-primary refresh-btn" id="refreshAppsBtn">
+                    <span data-i18n="refresh">🔄 تحديث</span>
+                </button>
+            </div>
+
+            <div class="apps-list" id="appsList">
+                <p class="empty-msg" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
+            </div>
         </section>
 
         <!-- طرفية السجل -->
