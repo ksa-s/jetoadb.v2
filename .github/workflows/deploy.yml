@@ -1,4 +1,4 @@
-name: Deploy Vite site to Pages
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -18,44 +18,4 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Ensure g.jar exists
-        run: |
-          if [ ! -f public/tools/g.jar ] || [ ! -s public/tools/g.jar ]; then
-            echo "⚠️ g.jar غير موجود، سيتم بناؤه..."
-            # لن نبني هنا، فقط نتأكد أن الملف موجود
-            ls -lh public/tools/
-          else
-            echo "✅ g.jar موجود بحجم:"
-            ls -lh public/tools/g.jar
-          fi
-
-      - name: Build
-        run: bun run build
-
-      - name: Verify g.jar in dist
-        run: |
-          echo "=== التحقق من g.jar في dist ==="
-          ls -lh dist/tools/g.jar || echo "❌ g.jar غير موجود في dist!"
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './dist'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name
