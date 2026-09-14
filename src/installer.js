@@ -343,11 +343,10 @@ export class AdbInstaller {
     }
 
    async installApk(apkBytes, apkName, onProgress) {
-    // تقصير الاسم لتفادي مشاكل طول السطر في ADB shell
+    // قصّر اسم الملف إلى 20 حرفاً لتجنب مشاكل طول السطر في ADB
     let remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
-    if (remoteName.length > 30) {
-        const ext = remoteName.endsWith('.apk') ? '.apk' : '';
-        remoteName = remoteName.substring(0, 26) + ext;
+    if (remoteName.length > 20) {
+        remoteName = "app_" + Date.now() + ".apk";
     }
     const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
         let outputText = "";
