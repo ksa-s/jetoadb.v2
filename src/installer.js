@@ -293,41 +293,74 @@ export class AdbInstaller {
 
     // ✅ إصلاح: runShell مع تأخير بعد كل أمر
     async runShell(commands, timeoutMs = 180000) {
-        const pty = await this.adb.subprocess.noneProtocol.pty();
-        const encoder = new TextEncoder();
-        const decoder = new TextDecoder();
-        let output = "";
-        let timedOut = false;
-        const timer = setTimeout(() => { timedOut = true; try { pty.kill(); } catch (e) {} }, timeoutMs);
+    const pty = await this.adb.subprocess.noneProtocol.pty();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let output = "";
+    let timedOut = false;
+    let markerCount = 0;
 
-        const readDone = (async () => {
-            const reader = pty.output.getReader();
-            try {
-                for (;;) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value) output += decoder.decode(value, { stream: true });
-                }
-            } catch (e) {}
-        })();
+    const timer = setTimeout(() => {
+        timedOut = true;
+        try { pty.kill(); } catch (e) {}
+    }, timeoutMs);
 
-        const writer = pty.input.getWriter();
+    // قراءة المخرجات
+    const readDone = (async () => {
+        const reader = pty.output.getReader();
         try {
-            for (const cmd of commands) {
-                await writer.write(encoder.encode(cmd + "\n"));
-                await new Promise(r => setTimeout(r, 500));
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) {
+                    output += decoder.decode(value, { stream: true });
+                    // طباعة مباشرة للسجل
+                    const lines = decoder.decode(value, { stream: false }).split('\n');
+                    for (const line of lines) {
+                        if (line.trim()) this.log("  " + line.trim());
+                    }
+                }
             }
-            await new Promise(r => setTimeout(r, 5000));
-            await writer.write(encoder.encode("exit\n"));
-        } catch (e) {} finally {
-            try { writer.releaseLock(); } catch (e) {}
+        } catch (e) {}
+    })();
+
+    const writer = pty.input.getWriter();
+
+    try {
+        // لكل أمر، أرسله وانتظر علامة النهاية
+        for (let i = 0; i < commands.length; i++) {
+            const cmd = commands[i];
+            markerCount++;
+            const marker = `__END_${markerCount}__`;
+
+            // إرسال الأمر ثم علامة النهاية
+            const fullCmd = `${cmd}; echo "${marker}"`;
+            await writer.write(encoder.encode(fullCmd + "\n"));
+
+            // انتظر ظهور علامة النهاية (بحد أقصى 60 ثانية)
+            const startTime = Date.now();
+            while (!output.includes(marker) && Date.now() - startTime < 60000) {
+                await new Promise(r => setTimeout(r, 200));
+            }
+
+            // انتظر إضافي لضمان اكتمال المخرجات
+            await new Promise(r => setTimeout(r, 500));
         }
 
-        await readDone;
-        clearTimeout(timer);
-        if (timedOut) output += "\n[Timeout]";
-        return output;
+        // انتظر نهائي قبل exit
+        await new Promise(r => setTimeout(r, 2000));
+        await writer.write(encoder.encode("exit\n"));
+    } catch (e) {
+        console.error("runShell error:", e);
+    } finally {
+        try { writer.releaseLock(); } catch (e) {}
     }
+
+    await readDone;
+    clearTimeout(timer);
+    if (timedOut) output += "\n[Timeout]";
+    return output;
+}
 
     // ==================== Helper Installer Protocol ====================
 
