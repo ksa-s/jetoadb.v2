@@ -308,3 +308,71 @@ function renderApps() {
             const result = await installer.exportApk(app.package);
             if (result.ok) {
                 exportBtn.textContent = `✓ ${t("exported")}`;
+                setTimeout(() => {
+                    exportBtn.textContent = `📦 ${t("export")}`;
+                    exportBtn.disabled = false;
+                }, 2000);
+            } else {
+                exportBtn.textContent = `✗ فشل`;
+                setTimeout(() => {
+                    exportBtn.textContent = `📦 ${t("export")}`;
+                    exportBtn.disabled = false;
+                }, 2000);
+            }
+        };
+
+        // زر الحذف
+        const uninstallBtn = document.createElement("button");
+        uninstallBtn.className = "action-btn btn-uninstall";
+        uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
+        uninstallBtn.onclick = async () => {
+            let msg = t("confirmUninstall") + "\n\n" + app.package;
+            if (currentTab === 'system') {
+                msg = "⚠️ " + t("systemAppWarning") + "\n\n" + msg;
+            }
+            if (!confirm(msg)) return;
+
+            uninstallBtn.disabled = true;
+            uninstallBtn.textContent = "...";
+            const result = await installer.uninstallApp(app.package);
+            if (result.ok) {
+                const idx = appsCache[currentTab].findIndex(a => a.package === app.package);
+                if (idx !== -1) appsCache[currentTab].splice(idx, 1);
+                renderApps();
+                if (currentTab === 'user') userAppsCount.textContent = appsCache.user.length;
+                else systemAppsCount.textContent = appsCache.system.length;
+            } else {
+                uninstallBtn.textContent = `✗ فشل`;
+                setTimeout(() => {
+                    uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
+                    uninstallBtn.disabled = false;
+                }, 2000);
+            }
+        };
+
+        actions.appendChild(grantBtn);
+        actions.appendChild(launchBtn);
+        actions.appendChild(exportBtn);
+        actions.appendChild(uninstallBtn);
+
+        div.appendChild(header);
+        div.appendChild(actions);
+        appsList.appendChild(div);
+    }
+}
+
+tabUser.addEventListener("click", () => {
+    currentTab = 'user';
+    tabUser.classList.add("active");
+    tabSystem.classList.remove("active");
+    renderApps();
+});
+
+tabSystem.addEventListener("click", () => {
+    currentTab = 'system';
+    tabSystem.classList.add("active");
+    tabUser.classList.remove("active");
+    renderApps();
+});
+
+refreshAppsBtn.addEventListener("click", () => loadApps(true));
