@@ -29,49 +29,10 @@ let selectedFiles = [];
 let currentTab = 'user';
 let appsCache = { user: [], system: [] };
 
-// ---------- إعدادات الموديلات ----------
-const MODEL_CONFIGS = {
-    "jetour-t2": {
-        installMode: "pm-shell",
-        hint: { ar: "Jetour T2 — يستخدم المثبت الاحتياطي", en: "Jetour T2 — uses helper installer" }
-    },
-    "jetour-x70": {
-        installMode: "pm-shell",
-        hint: { ar: "Jetour X70 — pm install عادي", en: "Jetour X70 — standard" }
-    },
-    "changan-cs55": {
-        installMode: "push",
-        shellPassword: "adb36987",
-        hint: { ar: "Changan CS55 — كلمة مرور shell مطلوبة", en: "Changan CS55 — shell password required" }
-    },
-    "changan-eadoplus": {
-        installMode: "oem",
-        hint: { ar: "Changan EadoPlus — كتابة مباشرة إلى /oem", en: "Changan EadoPlus — direct write to /oem" }
-    },
-    "haval-h6": {
-        installMode: "pm-shell",
-        hint: { ar: "Haval H6 — pm install عادي", en: "Haval H6 — standard" }
-    },
-    "geely-coolray": {
-        installMode: "pm-shell",
-        hint: { ar: "Geely Coolray — pm install عادي", en: "Geely Coolray — standard" }
-    },
-    "other": {
-        installMode: "pm-shell",
-        hint: { ar: "عام — pm install عادي", en: "Generic — standard" }
-    }
-};
-
 // ---------- الترجمة ----------
 setLang("ar");
 langToggle.addEventListener("click", () => {
     setLang(getLang() === "ar" ? "en" : "ar");
-    // تحديث hint الموديل
-    const m = modelSelect.value;
-    if (m) {
-        const cfg = MODEL_CONFIGS[m];
-        modelHint.textContent = cfg?.hint?.[getLang()] || "";
-    }
 });
 
 // ---------- Terminal ----------
@@ -91,8 +52,7 @@ modelSelect.addEventListener("change", () => {
         connectBtn.disabled = true;
         return;
     }
-    const cfg = MODEL_CONFIGS[m];
-    modelHint.textContent = cfg?.hint?.[getLang()] || "";
+    modelHint.textContent = "";
     connectBtn.disabled = false;
 });
 
@@ -106,13 +66,7 @@ connectBtn.addEventListener("click", async () => {
     log("$ connecting...", "prompt");
 
     try {
-        const cfg = MODEL_CONFIGS[modelSelect.value] || {};
-        installer = new AdbInstaller(log, {
-            installMode: cfg.installMode || 'pm-shell',
-            shellPassword: cfg.shellPassword || null,
-            autoSign: cfg.autoSign || false,
-            deviceOwnerReceiver: cfg.deviceOwnerReceiver || null
-        });
+        installer = new AdbInstaller(log, { installMode: 'pm-shell' });
         const info = await installer.connect();
         deviceModelText.textContent = info.model;
         deviceInfo.hidden = false;
@@ -169,9 +123,9 @@ function renderApkList() {
     selectedFiles.forEach((f, i) => {
         const li = document.createElement("li");
         const span = document.createElement("span");
-        span.textContent = `${f.name} — ${(f.size / 1024 / 1024).toFixed(1)} MB`;
+        span.textContent = `${f.name} - ${(f.size / 1024 / 1024).toFixed(1)} MB`;
         const rm = document.createElement("button");
-        rm.textContent = "×";
+        rm.textContent = "x";
         rm.className = "apk-remove";
         rm.addEventListener("click", () => {
             selectedFiles.splice(i, 1);
@@ -197,14 +151,14 @@ installBtn.addEventListener("click", async () => {
             const result = await installer.installApk(bytes, file.name);
             if (result.ok) {
                 ok++;
-                log(`✓ ${file.name} — ${t("installed")}`, "ok");
+                log(`OK: ${file.name}`, "ok");
             } else {
                 fail++;
-                log(`✗ ${file.name} — ${result.error}`, "err");
+                log(`FAIL: ${file.name} - ${result.error}`, "err");
             }
         } catch (err) {
             fail++;
-            log(`✗ ${file.name} — ${err.message}`, "err");
+            log(`FAIL: ${file.name} - ${err.message}`, "err");
         }
     }
 
@@ -218,7 +172,7 @@ installBtn.addEventListener("click", async () => {
 
 async function loadApps(force = false) {
     if (!installer) return;
-    appsList.innerHTML = `<p class="empty-msg">${t("loadingApps")}</p>`;
+    appsList.innerHTML = `<p class="empty-msg">Loading...</p>`;
     try {
         const [userApps, systemApps] = await Promise.all([
             installer.listApps('user'),
@@ -230,14 +184,14 @@ async function loadApps(force = false) {
         systemAppsCount.textContent = systemApps.length;
         renderApps();
     } catch (e) {
-        appsList.innerHTML = `<p class="empty-msg">خطأ: ${e.message}</p>`;
+        appsList.innerHTML = `<p class="empty-msg">Error: ${e.message}</p>`;
     }
 }
 
 function renderApps() {
     const apps = appsCache[currentTab] || [];
     if (apps.length === 0) {
-        appsList.innerHTML = `<p class="empty-msg">${t("noApps")}</p>`;
+        appsList.innerHTML = `<p class="empty-msg">No apps</p>`;
         return;
     }
 
@@ -251,7 +205,7 @@ function renderApps() {
 
         const icon = document.createElement("div");
         icon.className = "app-icon";
-        icon.textContent = currentTab === 'system' ? '⚙️' : '📦';
+        icon.textContent = currentTab === 'system' ? 'SYS' : 'APP';
 
         const info = document.createElement("div");
         info.className = "app-info";
@@ -272,68 +226,48 @@ function renderApps() {
         const actions = document.createElement("div");
         actions.className = "app-actions";
 
-        // زر منح الأذونات
         const grantBtn = document.createElement("button");
         grantBtn.className = "action-btn btn-grant";
-        grantBtn.textContent = `🔑 ${t("grant")}`;
+        grantBtn.textContent = "Grant";
         grantBtn.onclick = async () => {
             grantBtn.disabled = true;
-            grantBtn.textContent = "...";
             await installer.grantPermissions(app.package);
             await installer.verifyGrants(app.package, []);
-            grantBtn.textContent = `✓ ${t("grantedSuccess")}`;
+            grantBtn.textContent = "Done";
             setTimeout(() => {
-                grantBtn.textContent = `🔑 ${t("grant")}`;
+                grantBtn.textContent = "Grant";
                 grantBtn.disabled = false;
             }, 2000);
         };
 
-        // زر التشغيل
         const launchBtn = document.createElement("button");
         launchBtn.className = "action-btn btn-launch";
-        launchBtn.textContent = `▶ ${t("launch")}`;
+        launchBtn.textContent = "Launch";
         launchBtn.onclick = async () => {
             launchBtn.disabled = true;
             await installer.launchApp(app.package);
             setTimeout(() => { launchBtn.disabled = false; }, 1000);
         };
 
-        // زر تصدير APK
         const exportBtn = document.createElement("button");
         exportBtn.className = "action-btn btn-export";
-        exportBtn.textContent = `📦 ${t("export")}`;
+        exportBtn.textContent = "Export";
         exportBtn.onclick = async () => {
             exportBtn.disabled = true;
-            exportBtn.textContent = "...";
             const result = await installer.exportApk(app.package);
-            if (result.ok) {
-                exportBtn.textContent = `✓ ${t("exported")}`;
-                setTimeout(() => {
-                    exportBtn.textContent = `📦 ${t("export")}`;
-                    exportBtn.disabled = false;
-                }, 2000);
-            } else {
-                exportBtn.textContent = `✗ فشل`;
-                setTimeout(() => {
-                    exportBtn.textContent = `📦 ${t("export")}`;
-                    exportBtn.disabled = false;
-                }, 2000);
-            }
+            exportBtn.textContent = result.ok ? "Done" : "Fail";
+            setTimeout(() => {
+                exportBtn.textContent = "Export";
+                exportBtn.disabled = false;
+            }, 2000);
         };
 
-        // زر الحذف
         const uninstallBtn = document.createElement("button");
         uninstallBtn.className = "action-btn btn-uninstall";
-        uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
+        uninstallBtn.textContent = "Uninstall";
         uninstallBtn.onclick = async () => {
-            let msg = t("confirmUninstall") + "\n\n" + app.package;
-            if (currentTab === 'system') {
-                msg = "⚠️ " + t("systemAppWarning") + "\n\n" + msg;
-            }
-            if (!confirm(msg)) return;
-
+            if (!confirm("Uninstall " + app.package + "?")) return;
             uninstallBtn.disabled = true;
-            uninstallBtn.textContent = "...";
             const result = await installer.uninstallApp(app.package);
             if (result.ok) {
                 const idx = appsCache[currentTab].findIndex(a => a.package === app.package);
@@ -342,9 +276,9 @@ function renderApps() {
                 if (currentTab === 'user') userAppsCount.textContent = appsCache.user.length;
                 else systemAppsCount.textContent = appsCache.system.length;
             } else {
-                uninstallBtn.textContent = `✗ فشل`;
+                uninstallBtn.textContent = "Fail";
                 setTimeout(() => {
-                    uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
+                    uninstallBtn.textContent = "Uninstall";
                     uninstallBtn.disabled = false;
                 }, 2000);
             }
