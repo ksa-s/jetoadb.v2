@@ -11,7 +11,7 @@ import { t } from "./i18n.js";
 const HELPER_JAR_URL = "./tools/g.jar";
 const HELPER_JAR_PATH = "/data/local/tmp/g.jar";
 const HELPER_SH_PATH = "/data/local/tmp/r.sh";
-const HELPER_JAR_BYTES_EXPECTED = 0; // 0 = تعطيل التحقق
+const HELPER_JAR_BYTES_EXPECTED = 0;
 const HELPER_CLASS = "com.garagetool.installer.GtInstall";
 const PUSH_PRIMARY_DIR = "/data/local/tmp";
 const PUSH_FALLBACK_DIR = "/sdcard/Download";
@@ -37,7 +37,6 @@ function isDirProblem(text) {
     return /no space left|not enough space|insufficient[ _]storage|read-only file system|permission denied/i.test(s);
 }
 
-// ---------- دوال مساعدة ----------
 function apkToReadableStream(buffer) {
     let offset = 0;
     return new ReadableStream({
@@ -52,32 +51,28 @@ function apkToReadableStream(buffer) {
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ---------- مدير ADB ----------
+// =====================================================================
+//  مدير ADB
+// =====================================================================
 export class AdbInstaller {
     constructor(logFn) {
         this.adb = null;
         this.log = logFn || console.log;
         this.device = null;
-     }
-            // ==================== إدارة التطبيقات ====================
+    }
 
-    // الحصول على قائمة التطبيقات (user أو system)
+    // ==================== إدارة التطبيقات ====================
+
     async listApps(type = 'user') {
         if (!this.adb) return [];
-
         try {
-            // pm list packages -3 للمثبتة، -s للنظام
             const flag = type === 'system' ? '-s' : '-3';
             const output = await this.adb.subprocess.noneProtocol.spawnWaitText(`pm list packages ${flag}`);
-
             const pkgs = [];
             for (const line of output.split('\n')) {
                 const match = line.match(/^package:(.+)$/);
                 if (match) pkgs.push(match[1].trim());
             }
-
-            // جلب أسماء التطبيقات (label) من dumpsys (قد يكون بطيئاً)
-            // نكتفي بعرض اسم الحزمة لتفادي التأخير
             return pkgs.map(pkg => ({ package: pkg }));
         } catch (e) {
             this.log(`خطأ في جلب التطبيقات: ${e.message}`, "err");
@@ -85,18 +80,14 @@ export class AdbInstaller {
         }
     }
 
-    // منح الأذونات (عادية + خاصة + ظهور في التطبيقات)
     async grantPermissions(pkg) {
         if (!this.adb) return { ok: false, error: "No ADB" };
-
         const cmds = [
-            // أذونات خاصة عبر appops
             `appops set ${pkg} SYSTEM_ALERT_WINDOW allow`,
             `appops set ${pkg} REQUEST_INSTALL_PACKAGES allow`,
             `appops set ${pkg} MANAGE_EXTERNAL_STORAGE allow`,
             `appops set ${pkg} WRITE_SETTINGS allow`,
             `appops set ${pkg} PACKAGE_USAGE_STATS allow`,
-            // أذونات عادية عبر pm grant
             `pm grant ${pkg} android.permission.READ_EXTERNAL_STORAGE`,
             `pm grant ${pkg} android.permission.WRITE_EXTERNAL_STORAGE`,
             `pm grant ${pkg} android.permission.ACCESS_FINE_LOCATION`,
@@ -107,10 +98,8 @@ export class AdbInstaller {
             `pm grant ${pkg} android.permission.CALL_PHONE`,
             `pm grant ${pkg} android.permission.SEND_SMS`,
             `pm grant ${pkg} android.permission.RECEIVE_SMS`,
-            // الظهور في التطبيقات (إعادة تفعيل)
             `pm enable ${pkg}`,
         ];
-
         let success = 0, fail = 0;
         for (const cmd of cmds) {
             try {
@@ -120,15 +109,12 @@ export class AdbInstaller {
                 fail++;
             }
         }
-
         this.log(`✓ ${pkg}: ${success} أذونات ناجحة، ${fail} فشلت`, "ok");
         return { ok: true, success, fail };
     }
 
-    // تشغيل التطبيق
     async launchApp(pkg) {
         if (!this.adb) return { ok: false };
-
         try {
             await this.adb.subprocess.noneProtocol.spawnWaitText(
                 `monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`
@@ -141,10 +127,8 @@ export class AdbInstaller {
         }
     }
 
-    // حذف التطبيق
     async uninstallApp(pkg) {
         if (!this.adb) return { ok: false };
-
         try {
             const output = await this.adb.subprocess.noneProtocol.spawnWaitText(
                 `pm uninstall --user 0 ${pkg}`
@@ -162,27 +146,20 @@ export class AdbInstaller {
         }
     }
 
-    // تصدير APK إلى مجلد Download على الجهاز
     async exportApk(pkg) {
         if (!this.adb) return { ok: false };
-
         try {
-            // الحصول على مسار APK
             const pathOutput = await this.adb.subprocess.noneProtocol.spawnWaitText(`pm path ${pkg}`);
             const match = pathOutput.match(/package:(.+\.apk)/);
             if (!match) {
                 this.log(`✗ ${pkg}: لم يُعثر على APK`, "err");
                 return { ok: false, error: "APK not found" };
             }
-
             const sourcePath = match[1].trim();
             const destPath = `/sdcard/Download/${pkg.split('.').pop()}_${Date.now()}.apk`;
-
-            // نسخ الملف
             await this.adb.subprocess.noneProtocol.spawnWaitText(
                 `cp "${sourcePath}" "${destPath}"`
             );
-
             this.log(`📦 ${pkg}: تم التصدير إلى ${destPath}`, "ok");
             return { ok: true, path: destPath };
         } catch (e) {
@@ -190,13 +167,14 @@ export class AdbInstaller {
             return { ok: false, error: e.message };
         }
     }
-    }
+
+    // ==================== الاتصال ====================
 
     async connect() {
         const Manager = AdbDaemonWebUsbDeviceManager.BROWSER;
         if (!Manager) throw new Error("WebUSB not supported");
 
-        const CredentialStore = new AdbWebCredentialStore("GarageTool");
+        const CredentialStore = new AdbWebCredentialStore("SamSoft");
         const device = await Manager.requestDevice();
         if (!device) throw new Error("Device selection cancelled");
 
@@ -210,7 +188,6 @@ export class AdbInstaller {
         this.adb = new Adb(transport);
         this.device = device;
 
-        // قراءة الموديل
         let model = "Unknown";
         try {
             model = (await this.adb.subprocess.noneProtocol.spawnWaitText("getprop ro.product.model")).trim() || model;
@@ -226,7 +203,6 @@ export class AdbInstaller {
         }
     }
 
-    // ---------- ADB helpers ----------
     async syncPushOnce(remotePath, buffer) {
         const sync = await this.adb.sync();
         try {
@@ -271,7 +247,8 @@ export class AdbInstaller {
         return output;
     }
 
-    // ---------- Helper Installer Protocol ----------
+    // ==================== Helper Installer Protocol ====================
+
     async ensureHelperOnDevice() {
         if (helperDelivered) return "";
         if (helperDead) return helperDead;
@@ -361,7 +338,6 @@ export class AdbInstaller {
         return `Helper failed (${r.code}${r.text ? ": " + r.text : ""})`;
     }
 
-    // ---------- دالة التثبيت الرئيسية ----------
     async installApk(apkBytes, apkName, onProgress) {
         const remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
         const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
@@ -369,7 +345,6 @@ export class AdbInstaller {
         let installed = false;
         let helperResult = null;
 
-        // محاولة الرفع مع Retry
         for (let attempt = 0; attempt < PUSH_TRIES; attempt++) {
             try {
                 this.log(`$ push -> ${remotePath}`, "prompt");
@@ -386,7 +361,6 @@ export class AdbInstaller {
             }
         }
 
-        // محاولة pm install
         this.log(`> pm install "${remoteName}"`, "prompt");
         outputText = await this.runShell([
             `cd ${PUSH_PRIMARY_DIR}`,
@@ -395,7 +369,6 @@ export class AdbInstaller {
 
         installed = outputText.includes("Success");
 
-        // ✅ البروتوكول الاحتياطي
         if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
             try {
                 helperResult = await this.installViaHelper(remotePath);
@@ -410,7 +383,6 @@ export class AdbInstaller {
             }
         }
 
-        // تنظيف
         try {
             await this.runShell([`rm -f "${remotePath}"`], 10000);
         } catch (e) {}
@@ -424,5 +396,4 @@ export class AdbInstaller {
     }
 }
 
-// تصدير الدوال المساعدة
 export { isTransient, isDirProblem };
