@@ -338,9 +338,14 @@ export class AdbInstaller {
         return `Helper failed (${r.code}${r.text ? ": " + r.text : ""})`;
     }
 
-    async installApk(apkBytes, apkName, onProgress) {
-        const remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
-        const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
+   async installApk(apkBytes, apkName, onProgress) {
+    // تقصير الاسم لتفادي مشاكل طول السطر في ADB shell
+    let remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
+    if (remoteName.length > 30) {
+        const ext = remoteName.endsWith('.apk') ? '.apk' : '';
+        remoteName = remoteName.substring(0, 26) + ext;
+    }
+    const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
         let outputText = "";
         let installed = false;
         let helperResult = null;
