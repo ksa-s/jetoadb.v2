@@ -58,6 +58,137 @@ export class AdbInstaller {
         this.adb = null;
         this.log = logFn || console.log;
         this.device = null;
+            // ==================== إدارة التطبيقات ====================
+
+    // الحصول على قائمة التطبيقات (user أو system)
+    async listApps(type = 'user') {
+        if (!this.adb) return [];
+
+        try {
+            // pm list packages -3 للمثبتة، -s للنظام
+            const flag = type === 'system' ? '-s' : '-3';
+            const output = await this.adb.subprocess.noneProtocol.spawnWaitText(`pm list packages ${flag}`);
+
+            const pkgs = [];
+            for (const line of output.split('\n')) {
+                const match = line.match(/^package:(.+)$/);
+                if (match) pkgs.push(match[1].trim());
+            }
+
+            // جلب أسماء التطبيقات (label) من dumpsys (قد يكون بطيئاً)
+            // نكتفي بعرض اسم الحزمة لتفادي التأخير
+            return pkgs.map(pkg => ({ package: pkg }));
+        } catch (e) {
+            this.log(`خطأ في جلب التطبيقات: ${e.message}`, "err");
+            return [];
+        }
+    }
+
+    // منح الأذونات (عادية + خاصة + ظهور في التطبيقات)
+    async grantPermissions(pkg) {
+        if (!this.adb) return { ok: false, error: "No ADB" };
+
+        const cmds = [
+            // أذونات خاصة عبر appops
+            `appops set ${pkg} SYSTEM_ALERT_WINDOW allow`,
+            `appops set ${pkg} REQUEST_INSTALL_PACKAGES allow`,
+            `appops set ${pkg} MANAGE_EXTERNAL_STORAGE allow`,
+            `appops set ${pkg} WRITE_SETTINGS allow`,
+            `appops set ${pkg} PACKAGE_USAGE_STATS allow`,
+            // أذونات عادية عبر pm grant
+            `pm grant ${pkg} android.permission.READ_EXTERNAL_STORAGE`,
+            `pm grant ${pkg} android.permission.WRITE_EXTERNAL_STORAGE`,
+            `pm grant ${pkg} android.permission.ACCESS_FINE_LOCATION`,
+            `pm grant ${pkg} android.permission.ACCESS_COARSE_LOCATION`,
+            `pm grant ${pkg} android.permission.READ_PHONE_STATE`,
+            `pm grant ${pkg} android.permission.RECORD_AUDIO`,
+            `pm grant ${pkg} android.permission.CAMERA`,
+            `pm grant ${pkg} android.permission.CALL_PHONE`,
+            `pm grant ${pkg} android.permission.SEND_SMS`,
+            `pm grant ${pkg} android.permission.RECEIVE_SMS`,
+            // الظهور في التطبيقات (إعادة تفعيل)
+            `pm enable ${pkg}`,
+        ];
+
+        let success = 0, fail = 0;
+        for (const cmd of cmds) {
+            try {
+                await this.adb.subprocess.noneProtocol.spawnWaitText(cmd);
+                success++;
+            } catch (e) {
+                fail++;
+            }
+        }
+
+        this.log(`✓ ${pkg}: ${success} أذونات ناجحة، ${fail} فشلت`, "ok");
+        return { ok: true, success, fail };
+    }
+
+    // تشغيل التطبيق
+    async launchApp(pkg) {
+        if (!this.adb) return { ok: false };
+
+        try {
+            await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `monkey -p ${pkg} -c android.intent.category.LAUNCHER 1`
+            );
+            this.log(`▶ ${pkg}: تم التشغيل`, "ok");
+            return { ok: true };
+        } catch (e) {
+            this.log(`✗ ${pkg}: فشل التشغيل - ${e.message}`, "err");
+            return { ok: false, error: e.message };
+        }
+    }
+
+    // حذف التطبيق
+    async uninstallApp(pkg) {
+        if (!this.adb) return { ok: false };
+
+        try {
+            const output = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `pm uninstall --user 0 ${pkg}`
+            );
+            if (output.includes("Success")) {
+                this.log(`🗑 ${pkg}: تم الحذف`, "ok");
+                return { ok: true };
+            } else {
+                this.log(`✗ ${pkg}: فشل الحذف - ${output.trim()}`, "err");
+                return { ok: false, error: output.trim() };
+            }
+        } catch (e) {
+            this.log(`✗ ${pkg}: خطأ - ${e.message}`, "err");
+            return { ok: false, error: e.message };
+        }
+    }
+
+    // تصدير APK إلى مجلد Download على الجهاز
+    async exportApk(pkg) {
+        if (!this.adb) return { ok: false };
+
+        try {
+            // الحصول على مسار APK
+            const pathOutput = await this.adb.subprocess.noneProtocol.spawnWaitText(`pm path ${pkg}`);
+            const match = pathOutput.match(/package:(.+\.apk)/);
+            if (!match) {
+                this.log(`✗ ${pkg}: لم يُعثر على APK`, "err");
+                return { ok: false, error: "APK not found" };
+            }
+
+            const sourcePath = match[1].trim();
+            const destPath = `/sdcard/Download/${pkg.split('.').pop()}_${Date.now()}.apk`;
+
+            // نسخ الملف
+            await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `cp "${sourcePath}" "${destPath}"`
+            );
+
+            this.log(`📦 ${pkg}: تم التصدير إلى ${destPath}`, "ok");
+            return { ok: true, path: destPath };
+        } catch (e) {
+            this.log(`✗ ${pkg}: فشل التصدير - ${e.message}`, "err");
+            return { ok: false, error: e.message };
+        }
+    }
     }
 
     async connect() {
