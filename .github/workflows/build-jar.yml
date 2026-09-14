@@ -22,22 +22,21 @@ jobs:
           java-version: '8'
           distribution: 'temurin'
 
-      - name: Download android.jar
+       - name: Download android.jar
         run: |
-          # تحميل android-30 (يعمل مع كود GtInstall.java)
-          wget -q --timeout=60 https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O android.jar || \
-          wget -q --timeout=60 https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O android.jar
+          # نحفظ android.jar في /tmp (خارج المستودع)
+          wget -q --timeout=60 https://raw.githubusercontent.com/Sable/android-platforms/master/android-30/android.jar -O /tmp/android.jar || \
+          wget -q --timeout=60 https://github.com/Sable/android-platforms/raw/master/android-30/android.jar -O /tmp/android.jar
           
-          # التحقق من أن الملف تم تحميله وحجمه معقول (> 1 MB)
-          if [ ! -s android.jar ] || [ $(stat -c%s android.jar) -lt 1000000 ]; then
-            echo "ERROR: android.jar is too small or empty!"
-            ls -lh android.jar
+          # التحقق من صحة الملف
+          if [ ! -s /tmp/android.jar ] || [ $(stat -c%s /tmp/android.jar) -lt 1000000 ]; then
+            echo "ERROR: android.jar is invalid!"
             exit 1
           fi
           
-          echo "=== android.jar loaded successfully ==="
-          ls -lh android.jar
-          file android.jar
+          echo "=== android.jar ready ==="
+          ls -lh /tmp/android.jar
+          file /tmp/android.jar
 
       - name: Compile GtInstall.java
         run: |
