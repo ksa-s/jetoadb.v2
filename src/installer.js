@@ -298,12 +298,16 @@ export class AdbInstaller {
 
         const script = [
             "#!/system/bin/sh",
+            `echo "=== START ==="`,
+            `ls -la ${HELPER_JAR_PATH}`,
             `chmod 644 ${HELPER_JAR_PATH} '${remoteApkPath}'`,
-            `CLASSPATH=${HELPER_JAR_PATH} app_process /system/bin ${HELPER_CLASS} '${remoteApkPath}'`,
-            "echo GT_RC $?",
-            ""
-        ].join("\n");
-
+            `ls -la '${remoteApkPath}'`,
+            `echo "=== RUNNING ==="`,
+            `CLASSPATH=${HELPER_JAR_PATH} app_process /system/bin ${HELPER_CLASS} '${remoteApkPath}' 2>&1`,
+            `echo "GT_RC $?"`,
+            `echo "=== END ==="`,
+              ""
+    ].join("\n");
         try {
             await this.syncPushOnce(HELPER_SH_PATH, new TextEncoder().encode(script));
         } catch (e) {
