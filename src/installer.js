@@ -1,5 +1,5 @@
 // =====================================================================
-//  installer.js — WebADB + Helper Installer Protocol
+//  installer.js — WebADB + Helper Installer Protocol (v3.0)
 // =====================================================================
 
 import { Adb, AdbDaemonTransport } from "@yume-chan/adb";
@@ -17,6 +17,7 @@ const PUSH_PRIMARY_DIR = "/data/local/tmp";
 const PUSH_FALLBACK_DIR = "/sdcard/Download";
 const PUSH_TRIES = 3;
 const PUSH_CHUNK = 1024 * 1024;
+const SIGN_API_URL = "/api/sign"; // سيتم استبداله بـ Vercel URL لاحقاً
 
 let helperJarBytes = null;
 let helperDelivered = false;
@@ -55,10 +56,14 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 //  مدير ADB
 // =====================================================================
 export class AdbInstaller {
-    constructor(logFn) {
+    constructor(logFn, options = {}) {
         this.adb = null;
         this.log = logFn || console.log;
         this.device = null;
+        this.installMode = options.installMode || 'pm-shell'; // pm-shell | oem | push | spawn
+        this.shellPassword = options.shellPassword || null;
+        this.autoSign = options.autoSign || false;
+        this.deviceOwnerReceiver = options.deviceOwnerReceiver || null;
     }
 
     // ==================== إدارة التطبيقات ====================
@@ -108,6 +113,13 @@ export class AdbInstaller {
             } catch (e) {
                 fail++;
             }
+        }
+        // تشغيل الوضع الآمن للجغرافيا إذا طُلب
+        if (this.installMode === 'push') {
+            try {
+                await this.adb.subprocess.noneProtocol.spawnWaitText("settings put secure location_mode 3");
+                this.log(`✓ ${pkg}: تم تفعيل GPS mode 3`, "ok");
+            } catch (e) {}
         }
         this.log(`✓ ${pkg}: ${success} أذونات ناجحة، ${fail} فشلت`, "ok");
         return { ok: true, success, fail };
@@ -168,6 +180,73 @@ export class AdbInstaller {
         }
     }
 
+    // ==================== التحقق من الصلاحيات ====================
+
+    async verifyGrants(pkg, postInstall = []) {
+        const verdicts = [];
+
+        try {
+            // التحقق من appops
+            const appopsOut = await this.runShell([`appops get ${pkg}`], 30000);
+            const otvetil = Boolean(appopsOut && appopsOut.trim());
+
+            for (const op of ['SYSTEM_ALERT_WINDOW', 'WRITE_SETTINGS', 'MANAGE_EXTERNAL_STORAGE']) {
+                if (!postInstall.some(c => c.includes(op))) continue;
+                const m = new RegExp(op + '[^\\n]*?(allow|deny|ignore|default)', 'i').exec(appopsOut);
+                verdicts.push({
+                    op,
+                    status: m ? (m[1].toLowerCase() === 'allow' ? 'OK' : 'FAIL') : (otvetil ? 'FAIL' : 'SKIP')
+                });
+            }
+
+            // التحقق من dpm (إذا طُلب)
+            if (this.deviceOwnerReceiver) {
+                const dpmOut = await this.runShell(['dumpsys device_policy'], 30000);
+                const hasDpm = /Device Policy Manager|device.?policy/i.test(dpmOut || '');
+                verdicts.push({
+                    op: 'DEVICE_OWNER',
+                    status: hasDpm ? (dpmOut.includes(pkg) ? 'OK' : 'FAIL') : 'SKIP'
+                });
+            }
+        } catch (e) {
+            verdicts.push({ op: 'VERIFY', status: 'ERROR', error: e.message });
+        }
+
+        this.log(`🔍 التحقق من الصلاحيات:`, "ok");
+        for (const v of verdicts) {
+            const icon = v.status === 'OK' ? '✓' : (v.status === 'FAIL' ? '✗' : '⊘');
+            this.log(`   ${icon} ${v.op}: ${v.status}`, v.status === 'OK' ? 'ok' : 'warn');
+        }
+        return verdicts;
+    }
+
+    // ==================== التوقيع التلقائي ====================
+
+    async signApk(bytes, apkName = 'app.apk') {
+        try {
+            this.log(`🔐 توقيع ${apkName} على السيرفر...`);
+            const res = await fetch(SIGN_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    'X-APK-Name': apkName
+                },
+                body: bytes,
+            });
+            if (!res.ok) {
+                let reason = '';
+                try { reason = (await res.json()).reason; } catch (e) {}
+                throw new Error(`فشل التوقيع: ${reason || res.status}`);
+            }
+            const signedBytes = new Uint8Array(await res.arrayBuffer());
+            this.log(`✓ تم التوقيع (${signedBytes.length} bytes)`, "ok");
+            return signedBytes;
+        } catch (e) {
+            this.log(`✗ فشل التوقيع: ${e.message}`, "err");
+            throw e;
+        }
+    }
+
     // ==================== الاتصال ====================
 
     async connect() {
@@ -212,47 +291,44 @@ export class AdbInstaller {
         }
     }
 
+    // ✅ إصلاح: runShell مع تأخير بعد كل أمر
     async runShell(commands, timeoutMs = 180000) {
-    const pty = await this.adb.subprocess.noneProtocol.pty();
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    let output = "";
-    let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; try { pty.kill(); } catch (e) {} }, timeoutMs);
+        const pty = await this.adb.subprocess.noneProtocol.pty();
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+        let output = "";
+        let timedOut = false;
+        const timer = setTimeout(() => { timedOut = true; try { pty.kill(); } catch (e) {} }, timeoutMs);
 
-    const readDone = (async () => {
-        const reader = pty.output.getReader();
+        const readDone = (async () => {
+            const reader = pty.output.getReader();
+            try {
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (value) output += decoder.decode(value, { stream: true });
+                }
+            } catch (e) {}
+        })();
+
+        const writer = pty.input.getWriter();
         try {
-            for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (value) output += decoder.decode(value, { stream: true });
+            for (const cmd of commands) {
+                await writer.write(encoder.encode(cmd + "\n"));
+                await new Promise(r => setTimeout(r, 500));
             }
-        } catch (e) {}
-    })();
-
-    const writer = pty.input.getWriter();
-    try {
-        for (const cmd of commands) {
-            await writer.write(encoder.encode(cmd + "\n"));
-            // ✅ انتظر بين الأوامر لضمان التنفيذ
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 5000));
+            await writer.write(encoder.encode("exit\n"));
+        } catch (e) {} finally {
+            try { writer.releaseLock(); } catch (e) {}
         }
 
-        // ✅ انتظر وقتاً كافياً لآخر أمر (خاصة pm install)
-        await new Promise(r => setTimeout(r, 5000));
-
-        // ✅ أرسل exit فقط بعد الانتهاء
-        await writer.write(encoder.encode("exit\n"));
-    } catch (e) {} finally {
-        try { writer.releaseLock(); } catch (e) {}
+        await readDone;
+        clearTimeout(timer);
+        if (timedOut) output += "\n[Timeout]";
+        return output;
     }
 
-    await readDone;
-    clearTimeout(timer);
-    if (timedOut) output += "\n[Timeout]";
-    return output;
-}
     // ==================== Helper Installer Protocol ====================
 
     async ensureHelperOnDevice() {
@@ -312,8 +388,9 @@ export class AdbInstaller {
             `CLASSPATH=${HELPER_JAR_PATH} app_process /system/bin ${HELPER_CLASS} '${remoteApkPath}' 2>&1`,
             `echo "GT_RC $?"`,
             `echo "=== END ==="`,
-              ""
-    ].join("\n");
+            ""
+        ].join("\n");
+
         try {
             await this.syncPushOnce(HELPER_SH_PATH, new TextEncoder().encode(script));
         } catch (e) {
@@ -348,77 +425,110 @@ export class AdbInstaller {
         return `Helper failed (${r.code}${r.text ? ": " + r.text : ""})`;
     }
 
-   async installApk(apkBytes, apkName, onProgress) {
-    let remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
-    if (remoteName.length > 20) {
-        remoteName = "app_" + Date.now() + ".apk";
-    }
-    const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
-    let outputText = "";
-    let installed = false;
-    let helperResult = null;
+    // ==================== التثبيت الرئيسي ====================
 
-    // رفع الملف
-    for (let attempt = 0; attempt < PUSH_TRIES; attempt++) {
-        try {
-            this.log(`$ push -> ${remotePath}`, "prompt");
-            await this.syncPushOnce(remotePath, apkBytes);
-            break;
-        } catch (pushErr) {
-            outputText = pushErr.message;
-            if (attempt < PUSH_TRIES - 1 && isTransient(pushErr)) {
-                this.log(`Retry ${attempt + 2}/${PUSH_TRIES}...`, "warn");
-                await sleep(1500 * (attempt + 1));
-                continue;
+    async installApk(apkBytes, apkName, onProgress) {
+        // التوقيع التلقائي (إذا مُفعّل)
+        if (this.autoSign) {
+            try {
+                apkBytes = await this.signApk(apkBytes, apkName);
+            } catch (e) {
+                this.log(`تخطي التوقيع: ${e.message}`, "warn");
             }
-            throw pushErr;
         }
-    }
 
-    // ✅ المحاولة 1: pm install مباشر
-    this.log(`> pm install -r "${remoteName}"`, "prompt");
-    outputText = await this.runShell([
-        `pm install -r "${PUSH_PRIMARY_DIR}/${remoteName}"`
-    ]);
-    installed = outputText.includes("Success");
+        let remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
+        if (remoteName.length > 20) {
+            remoteName = "app_" + Date.now() + ".apk";
+        }
+        const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
+        let outputText = "";
+        let installed = false;
+        let helperResult = null;
 
-    // ✅ المحاولة 2: cat | pm install -S
-    if (!installed) {
-        this.log(`> cat "${remoteName}" | pm install -S ${apkBytes.length}`, "prompt");
+        // رفع الملف
+        for (let attempt = 0; attempt < PUSH_TRIES; attempt++) {
+            try {
+                this.log(`$ push -> ${remotePath}`, "prompt");
+                await this.syncPushOnce(remotePath, apkBytes);
+                break;
+            } catch (pushErr) {
+                outputText = pushErr.message;
+                if (attempt < PUSH_TRIES - 1 && isTransient(pushErr)) {
+                    this.log(`Retry ${attempt + 2}/${PUSH_TRIES}...`, "warn");
+                    await sleep(1500 * (attempt + 1));
+                    continue;
+                }
+                throw pushErr;
+            }
+        }
+
+        // ✅ المحاولة 1: pm install مباشر
+        this.log(`> pm install -r "${remoteName}"`, "prompt");
         outputText = await this.runShell([
-            `cd ${PUSH_PRIMARY_DIR}`,
-            `cat "${remoteName}" | pm install -S ${apkBytes.length}`
+            `pm install -r "${PUSH_PRIMARY_DIR}/${remoteName}"`
         ]);
         installed = outputText.includes("Success");
-    }
 
-    // ✅ البروتوكول الاحتياطي
-    if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
+        // ✅ المحاولة 2: cat | pm install -S
+        if (!installed) {
+            this.log(`> cat "${remoteName}" | pm install -S ${apkBytes.length}`, "prompt");
+            outputText = await this.runShell([
+                `cd ${PUSH_PRIMARY_DIR}`,
+                `cat "${remoteName}" | pm install -S ${apkBytes.length}`
+            ]);
+            installed = outputText.includes("Success");
+        }
+
+        // ✅ المحاولة 3: البروتوكول الاحتياطي
+        if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
+            try {
+                helperResult = await this.installViaHelper(remotePath);
+            } catch (e) {
+                helperResult = { ok: false, code: "EXCEPTION", text: e.message, started: false };
+            }
+            if (helperResult.ok) {
+                installed = true;
+                this.log(t("helperSuccess") + `: ${helperResult.pkg}`, "ok");
+            } else {
+                this.log(this.helperErrorText(helperResult), "err");
+            }
+        }
+
+        // منح الصلاحيات والتحقق
+        if (installed) {
+            const pkg = helperResult?.pkg || await this.getPackageFromApk(apkBytes);
+            if (pkg) {
+                await this.grantPermissions(pkg);
+                await this.verifyGrants(pkg, []);
+            }
+        }
+
+        // تنظيف
         try {
-            helperResult = await this.installViaHelper(remotePath);
-        } catch (e) {
-            helperResult = { ok: false, code: "EXCEPTION", text: e.message, started: false };
-        }
-        if (helperResult.ok) {
-            installed = true;
-            this.log(t("helperSuccess") + `: ${helperResult.pkg}`, "ok");
-        } else {
-            this.log(this.helperErrorText(helperResult), "err");
-        }
+            await this.runShell([`rm -f "${remotePath}"`], 10000);
+        } catch (e) {}
+
+        return {
+            ok: installed,
+            pkg: helperResult?.pkg || null,
+            error: installed ? null : (helperResult ? this.helperErrorText(helperResult) : outputText.slice(0, 200)),
+            usedHelper: !!helperResult
+        };
     }
 
-    // تنظيف
-    try {
-        await this.runShell([`rm -f "${remotePath}"`], 10000);
-    } catch (e) {}
-
-    return {
-        ok: installed,
-        pkg: helperResult?.pkg || null,
-        error: installed ? null : (helperResult ? this.helperErrorText(helperResult) : outputText.slice(0, 200)),
-        usedHelper: !!helperResult
-    };
-}
+    async getPackageFromApk(bytes) {
+        // استخراج اسم الحزمة من APK (بسيط)
+        try {
+            const out = await this.runShell([
+                `pm install --dry-run "${PUSH_PRIMARY_DIR}/temp.apk" 2>&1 | grep -oP 'Package \\K[^ ]+' | head -1`
+            ]);
+            const match = out.match(/([a-z][a-z0-9_.]+)/);
+            return match ? match[1] : null;
+        } catch (e) {
+            return null;
+        }
+    }
 }
 
 export { isTransient, isDirProblem };
