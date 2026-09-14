@@ -349,65 +349,76 @@ export class AdbInstaller {
     }
 
    async installApk(apkBytes, apkName, onProgress) {
-    // قصّر اسم الملف إلى 20 حرفاً لتجنب مشاكل طول السطر في ADB
     let remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
     if (remoteName.length > 20) {
         remoteName = "app_" + Date.now() + ".apk";
     }
     const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
-        let outputText = "";
-        let installed = false;
-        let helperResult = null;
+    let outputText = "";
+    let installed = false;
+    let helperResult = null;
 
-        for (let attempt = 0; attempt < PUSH_TRIES; attempt++) {
-            try {
-                this.log(`$ push -> ${remotePath}`, "prompt");
-                await this.syncPushOnce(remotePath, apkBytes);
-                break;
-            } catch (pushErr) {
-                outputText = pushErr.message;
-                if (attempt < PUSH_TRIES - 1 && isTransient(pushErr)) {
-                    this.log(`Retry ${attempt + 2}/${PUSH_TRIES}...`, "warn");
-                    await sleep(1500 * (attempt + 1));
-                    continue;
-                }
-                throw pushErr;
-            }
-        }
-
-                this.log(`> pm install "${remoteName}" (${apkBytes.length} bytes)`, "prompt");
-                outputText = await this.runShell([
-                `cd ${PUSH_PRIMARY_DIR}`,
-                `cat "${remoteName}" | pm install -S ${apkBytes.length}`
-        ]);
-
-        installed = outputText.includes("Success");
-
-        if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
-            try {
-                helperResult = await this.installViaHelper(remotePath);
-            } catch (e) {
-                helperResult = { ok: false, code: "EXCEPTION", text: e.message, started: false };
-            }
-            if (helperResult.ok) {
-                installed = true;
-                this.log(t("helperSuccess") + `: ${helperResult.pkg}`, "ok");
-            } else {
-                this.log(this.helperErrorText(helperResult), "err");
-            }
-        }
-
+    // رفع الملف
+    for (let attempt = 0; attempt < PUSH_TRIES; attempt++) {
         try {
-            await this.runShell([`rm -f "${remotePath}"`], 10000);
-        } catch (e) {}
-
-        return {
-            ok: installed,
-            pkg: helperResult?.pkg || null,
-            error: installed ? null : (helperResult ? this.helperErrorText(helperResult) : outputText.slice(0, 200)),
-            usedHelper: !!helperResult
-        };
+            this.log(`$ push -> ${remotePath}`, "prompt");
+            await this.syncPushOnce(remotePath, apkBytes);
+            break;
+        } catch (pushErr) {
+            outputText = pushErr.message;
+            if (attempt < PUSH_TRIES - 1 && isTransient(pushErr)) {
+                this.log(`Retry ${attempt + 2}/${PUSH_TRIES}...`, "warn");
+                await sleep(1500 * (attempt + 1));
+                continue;
+            }
+            throw pushErr;
+        }
     }
+
+    // ✅ المحاولة 1: pm install مباشر
+    this.log(`> pm install -r "${remoteName}"`, "prompt");
+    outputText = await this.runShell([
+        `pm install -r "${PUSH_PRIMARY_DIR}/${remoteName}"`
+    ]);
+    installed = outputText.includes("Success");
+
+    // ✅ المحاولة 2: cat | pm install -S
+    if (!installed) {
+        this.log(`> cat "${remoteName}" | pm install -S ${apkBytes.length}`, "prompt");
+        outputText = await this.runShell([
+            `cd ${PUSH_PRIMARY_DIR}`,
+            `cat "${remoteName}" | pm install -S ${apkBytes.length}`
+        ]);
+        installed = outputText.includes("Success");
+    }
+
+    // ✅ البروتوكول الاحتياطي
+    if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
+        try {
+            helperResult = await this.installViaHelper(remotePath);
+        } catch (e) {
+            helperResult = { ok: false, code: "EXCEPTION", text: e.message, started: false };
+        }
+        if (helperResult.ok) {
+            installed = true;
+            this.log(t("helperSuccess") + `: ${helperResult.pkg}`, "ok");
+        } else {
+            this.log(this.helperErrorText(helperResult), "err");
+        }
+    }
+
+    // تنظيف
+    try {
+        await this.runShell([`rm -f "${remotePath}"`], 10000);
+    } catch (e) {}
+
+    return {
+        ok: installed,
+        pkg: helperResult?.pkg || null,
+        error: installed ? null : (helperResult ? this.helperErrorText(helperResult) : outputText.slice(0, 200)),
+        usedHelper: !!helperResult
+    };
+}
 }
 
 export { isTransient, isDirProblem };
