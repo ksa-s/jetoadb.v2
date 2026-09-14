@@ -15,10 +15,19 @@ const apkList = document.getElementById("apkList");
 const installBtn = document.getElementById("installBtn");
 const terminal = document.getElementById("terminal");
 const langToggle = document.getElementById("langToggle");
+const appsManagerCard = document.getElementById("appsManagerCard");
+const tabUser = document.getElementById("tabUser");
+const tabSystem = document.getElementById("tabSystem");
+const refreshAppsBtn = document.getElementById("refreshAppsBtn");
+const appsList = document.getElementById("appsList");
+const userAppsCount = document.getElementById("userAppsCount");
+const systemAppsCount = document.getElementById("systemAppsCount");
 
 // ---------- الحالة ----------
 let installer = null;
 let selectedFiles = [];
+let currentTab = 'user';
+let appsCache = { user: [], system: [] };
 
 // ---------- الترجمة ----------
 setLang("ar");
@@ -37,12 +46,12 @@ function log(text, cls) {
 
 // ---------- اختيار الموديل ----------
 const MODEL_HINTS = {
-    "jetour-t2": { ar: "Jetour T2 — يستخدم المثبت الاحتياطي (pm install محظور)", en: "Jetour T2 — uses helper installer" },
-    "jetour-x70": { ar: "Jetour X70 — pm install عادي", en: "Jetour X70 — standard pm install" },
-    "changan-cs55": { ar: "Changan CS55 — يتطلب كلمة مرور shell", en: "Changan CS55 — requires shell password" },
-    "haval-h6": { ar: "Haval H6 — pm install عادي", en: "Haval H6 — standard pm install" },
-    "geely-coolray": { ar: "Geely Coolray — pm install عادي", en: "Geely Coolray — standard pm install" },
-    "other": { ar: "عام — pm install عادي", en: "Generic — standard pm install" },
+    "jetour-t2": { ar: "Jetour T2 — يستخدم المثبت الاحتياطي", en: "Jetour T2 — uses helper installer" },
+    "jetour-x70": { ar: "Jetour X70 — pm install عادي", en: "Jetour X70 — standard" },
+    "changan-cs55": { ar: "Changan CS55 — يتطلب كلمة مرور shell", en: "Changan CS55 — shell password required" },
+    "haval-h6": { ar: "Haval H6 — pm install عادي", en: "Haval H6 — standard" },
+    "geely-coolray": { ar: "Geely Coolray — pm install عادي", en: "Geely Coolray — standard" },
+    "other": { ar: "عام — pm install عادي", en: "Generic — standard" },
 };
 
 modelSelect.addEventListener("change", () => {
@@ -73,6 +82,9 @@ connectBtn.addEventListener("click", async () => {
         disconnectBtn.hidden = false;
         connectBtn.hidden = true;
         log(`${t("connected")}: ${info.model}`, "ok");
+        // إظهار قسم إدارة التطبيقات
+        appsManagerCard.hidden = false;
+        loadApps();
     } catch (err) {
         log(`Error: ${err.message}`, "err");
         connectBtn.disabled = false;
@@ -86,6 +98,7 @@ disconnectBtn.addEventListener("click", async () => {
     disconnectBtn.hidden = true;
     connectBtn.hidden = false;
     connectBtn.disabled = !modelSelect.value;
+    appsManagerCard.hidden = true;
     log(t("disconnected"));
 });
 
@@ -164,3 +177,178 @@ installBtn.addEventListener("click", async () => {
     renderApkList();
     installBtn.disabled = false;
 });
+
+// ==================== إدارة التطبيقات ====================
+
+// تحميل قائمة التطبيقات
+async function loadApps(force = false) {
+    if (!installer) return;
+
+    appsList.innerHTML = `<p class="empty-msg">${t("loadingApps")}</p>`;
+
+    try {
+        // جلب النوعين بالتوازي
+        const [userApps, systemApps] = await Promise.all([
+            installer.listApps('user'),
+            installer.listApps('system'),
+        ]);
+
+        appsCache.user = userApps;
+        appsCache.system = systemApps;
+        userAppsCount.textContent = userApps.length;
+        systemAppsCount.textContent = systemApps.length;
+
+        renderApps();
+    } catch (e) {
+        appsList.innerHTML = `<p class="empty-msg">خطأ: ${e.message}</p>`;
+    }
+}
+
+// عرض التطبيقات
+function renderApps() {
+    const apps = appsCache[currentTab] || [];
+    if (apps.length === 0) {
+        appsList.innerHTML = `<p class="empty-msg">${t("noApps")}</p>`;
+        return;
+    }
+
+    appsList.innerHTML = "";
+    for (const app of apps) {
+        const div = document.createElement("div");
+        div.className = "app-item";
+
+        // معلومات التطبيق
+        const header = document.createElement("div");
+        header.className = "app-header";
+
+        const icon = document.createElement("div");
+        icon.className = "app-icon";
+        icon.textContent = currentTab === 'system' ? '⚙️' : '📦';
+
+        const info = document.createElement("div");
+        info.className = "app-info";
+
+        const name = document.createElement("div");
+        name.className = "app-name";
+        name.textContent = app.package.split('.').pop();
+
+        const pkg = document.createElement("div");
+        pkg.className = "app-pkg";
+        pkg.textContent = app.package;
+
+        info.appendChild(name);
+        info.appendChild(pkg);
+        header.appendChild(icon);
+        header.appendChild(info);
+
+        // الأزرار
+        const actions = document.createElement("div");
+        actions.className = "app-actions";
+
+        // زر منح الأذونات
+        const grantBtn = document.createElement("button");
+        grantBtn.className = "action-btn btn-grant";
+        grantBtn.textContent = `🔑 ${t("grant")}`;
+        grantBtn.onclick = async () => {
+            grantBtn.disabled = true;
+            grantBtn.textContent = "...";
+            await installer.grantPermissions(app.package);
+            grantBtn.textContent = `✓ ${t("grantedSuccess")}`;
+            setTimeout(() => {
+                grantBtn.textContent = `🔑 ${t("grant")}`;
+                grantBtn.disabled = false;
+            }, 2000);
+        };
+
+        // زر التشغيل
+        const launchBtn = document.createElement("button");
+        launchBtn.className = "action-btn btn-launch";
+        launchBtn.textContent = `▶ ${t("launch")}`;
+        launchBtn.onclick = async () => {
+            launchBtn.disabled = true;
+            await installer.launchApp(app.package);
+            setTimeout(() => { launchBtn.disabled = false; }, 1000);
+        };
+
+        // زر تصدير APK
+        const exportBtn = document.createElement("button");
+        exportBtn.className = "action-btn btn-export";
+        exportBtn.textContent = `📦 ${t("export")}`;
+        exportBtn.onclick = async () => {
+            exportBtn.disabled = true;
+            exportBtn.textContent = "...";
+            const result = await installer.exportApk(app.package);
+            if (result.ok) {
+                exportBtn.textContent = `✓ ${t("exported")}`;
+                setTimeout(() => {
+                    exportBtn.textContent = `📦 ${t("export")}`;
+                    exportBtn.disabled = false;
+                }, 2000);
+            } else {
+                exportBtn.textContent = `✗ فشل`;
+                setTimeout(() => {
+                    exportBtn.textContent = `📦 ${t("export")}`;
+                    exportBtn.disabled = false;
+                }, 2000);
+            }
+        };
+
+        // زر الحذف
+        const uninstallBtn = document.createElement("button");
+        uninstallBtn.className = "action-btn btn-uninstall";
+        uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
+        uninstallBtn.onclick = async () => {
+            // تحذير خاص لتطبيقات النظام
+            let msg = t("confirmUninstall") + "\n\n" + app.package;
+            if (currentTab === 'system') {
+                msg = "⚠️ " + t("systemAppWarning") + "\n\n" + msg;
+            }
+            if (!confirm(msg)) return;
+
+            uninstallBtn.disabled = true;
+            uninstallBtn.textContent = "...";
+            const result = await installer.uninstallApp(app.package);
+            if (result.ok) {
+                // إزالة التطبيق من القائمة
+                const idx = appsCache[currentTab].findIndex(a => a.package === app.package);
+                if (idx !== -1) appsCache[currentTab].splice(idx, 1);
+                renderApps();
+                if (currentTab === 'user') userAppsCount.textContent = appsCache.user.length;
+                else systemAppsCount.textContent = appsCache.system.length;
+            } else {
+                uninstallBtn.textContent = `✗ فشل`;
+                setTimeout(() => {
+                    uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
+                    uninstallBtn.disabled = false;
+                }, 2000);
+            }
+        };
+
+        actions.appendChild(grantBtn);
+        actions.appendChild(launchBtn);
+        actions.appendChild(exportBtn);
+        actions.appendChild(uninstallBtn);
+
+        div.appendChild(header);
+        div.appendChild(actions);
+        appsList.appendChild(div);
+    }
+}
+
+// التبديل بين التبويبات
+tabUser.addEventListener("click", () => {
+    currentTab = 'user';
+    tabUser.classList.add("active");
+    tabSystem.classList.remove("active");
+    renderApps();
+});
+
+tabSystem.addEventListener("click", () => {
+    currentTab = 'system';
+    tabSystem.classList.add("active");
+    tabUser.classList.remove("active");
+    renderApps();
+});
+
+// زر تحديث التطبيقات
+refreshAppsBtn.addEventListener("click", () => loadApps(true));
