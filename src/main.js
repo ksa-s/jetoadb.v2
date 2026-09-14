@@ -29,10 +29,49 @@ let selectedFiles = [];
 let currentTab = 'user';
 let appsCache = { user: [], system: [] };
 
+// ---------- إعدادات الموديلات ----------
+const MODEL_CONFIGS = {
+    "jetour-t2": {
+        installMode: "pm-shell",
+        hint: { ar: "Jetour T2 — يستخدم المثبت الاحتياطي", en: "Jetour T2 — uses helper installer" }
+    },
+    "jetour-x70": {
+        installMode: "pm-shell",
+        hint: { ar: "Jetour X70 — pm install عادي", en: "Jetour X70 — standard" }
+    },
+    "changan-cs55": {
+        installMode: "push",
+        shellPassword: "adb36987",
+        hint: { ar: "Changan CS55 — كلمة مرور shell مطلوبة", en: "Changan CS55 — shell password required" }
+    },
+    "changan-eadoplus": {
+        installMode: "oem",
+        hint: { ar: "Changan EadoPlus — كتابة مباشرة إلى /oem", en: "Changan EadoPlus — direct write to /oem" }
+    },
+    "haval-h6": {
+        installMode: "pm-shell",
+        hint: { ar: "Haval H6 — pm install عادي", en: "Haval H6 — standard" }
+    },
+    "geely-coolray": {
+        installMode: "pm-shell",
+        hint: { ar: "Geely Coolray — pm install عادي", en: "Geely Coolray — standard" }
+    },
+    "other": {
+        installMode: "pm-shell",
+        hint: { ar: "عام — pm install عادي", en: "Generic — standard" }
+    }
+};
+
 // ---------- الترجمة ----------
 setLang("ar");
 langToggle.addEventListener("click", () => {
     setLang(getLang() === "ar" ? "en" : "ar");
+    // تحديث hint الموديل
+    const m = modelSelect.value;
+    if (m) {
+        const cfg = MODEL_CONFIGS[m];
+        modelHint.textContent = cfg?.hint?.[getLang()] || "";
+    }
 });
 
 // ---------- Terminal ----------
@@ -45,15 +84,6 @@ function log(text, cls) {
 }
 
 // ---------- اختيار الموديل ----------
-const MODEL_HINTS = {
-    "jetour-t2": { ar: "Jetour T2 — يستخدم المثبت الاحتياطي", en: "Jetour T2 — uses helper installer" },
-    "jetour-x70": { ar: "Jetour X70 — pm install عادي", en: "Jetour X70 — standard" },
-    "changan-cs55": { ar: "Changan CS55 — يتطلب كلمة مرور shell", en: "Changan CS55 — shell password required" },
-    "haval-h6": { ar: "Haval H6 — pm install عادي", en: "Haval H6 — standard" },
-    "geely-coolray": { ar: "Geely Coolray — pm install عادي", en: "Geely Coolray — standard" },
-    "other": { ar: "عام — pm install عادي", en: "Generic — standard" },
-};
-
 modelSelect.addEventListener("change", () => {
     const m = modelSelect.value;
     if (!m) {
@@ -61,7 +91,8 @@ modelSelect.addEventListener("change", () => {
         connectBtn.disabled = true;
         return;
     }
-    modelHint.textContent = MODEL_HINTS[m]?.[getLang()] || "";
+    const cfg = MODEL_CONFIGS[m];
+    modelHint.textContent = cfg?.hint?.[getLang()] || "";
     connectBtn.disabled = false;
 });
 
@@ -75,14 +106,19 @@ connectBtn.addEventListener("click", async () => {
     log("$ connecting...", "prompt");
 
     try {
-        installer = new AdbInstaller(log);
+        const cfg = MODEL_CONFIGS[modelSelect.value] || {};
+        installer = new AdbInstaller(log, {
+            installMode: cfg.installMode || 'pm-shell',
+            shellPassword: cfg.shellPassword || null,
+            autoSign: cfg.autoSign || false,
+            deviceOwnerReceiver: cfg.deviceOwnerReceiver || null
+        });
         const info = await installer.connect();
         deviceModelText.textContent = info.model;
         deviceInfo.hidden = false;
         disconnectBtn.hidden = false;
         connectBtn.hidden = true;
         log(`${t("connected")}: ${info.model}`, "ok");
-        // إظهار قسم إدارة التطبيقات
         appsManagerCard.hidden = false;
         loadApps();
     } catch (err) {
@@ -180,31 +216,24 @@ installBtn.addEventListener("click", async () => {
 
 // ==================== إدارة التطبيقات ====================
 
-// تحميل قائمة التطبيقات
 async function loadApps(force = false) {
     if (!installer) return;
-
     appsList.innerHTML = `<p class="empty-msg">${t("loadingApps")}</p>`;
-
     try {
-        // جلب النوعين بالتوازي
         const [userApps, systemApps] = await Promise.all([
             installer.listApps('user'),
             installer.listApps('system'),
         ]);
-
         appsCache.user = userApps;
         appsCache.system = systemApps;
         userAppsCount.textContent = userApps.length;
         systemAppsCount.textContent = systemApps.length;
-
         renderApps();
     } catch (e) {
         appsList.innerHTML = `<p class="empty-msg">خطأ: ${e.message}</p>`;
     }
 }
 
-// عرض التطبيقات
 function renderApps() {
     const apps = appsCache[currentTab] || [];
     if (apps.length === 0) {
@@ -217,7 +246,6 @@ function renderApps() {
         const div = document.createElement("div");
         div.className = "app-item";
 
-        // معلومات التطبيق
         const header = document.createElement("div");
         header.className = "app-header";
 
@@ -241,7 +269,6 @@ function renderApps() {
         header.appendChild(icon);
         header.appendChild(info);
 
-        // الأزرار
         const actions = document.createElement("div");
         actions.className = "app-actions";
 
@@ -253,6 +280,7 @@ function renderApps() {
             grantBtn.disabled = true;
             grantBtn.textContent = "...";
             await installer.grantPermissions(app.package);
+            await installer.verifyGrants(app.package, []);
             grantBtn.textContent = `✓ ${t("grantedSuccess")}`;
             setTimeout(() => {
                 grantBtn.textContent = `🔑 ${t("grant")}`;
@@ -280,104 +308,3 @@ function renderApps() {
             const result = await installer.exportApk(app.package);
             if (result.ok) {
                 exportBtn.textContent = `✓ ${t("exported")}`;
-                setTimeout(() => {
-                    exportBtn.textContent = `📦 ${t("export")}`;
-                    exportBtn.disabled = false;
-                }, 2000);
-            } else {
-                exportBtn.textContent = `✗ فشل`;
-                setTimeout(() => {
-                    exportBtn.textContent = `📦 ${t("export")}`;
-                    exportBtn.disabled = false;
-                }, 2000);
-            }
-        };
-
-        // زر الحذف
-        const uninstallBtn = document.createElement("button");
-        uninstallBtn.className = "action-btn btn-uninstall";
-        uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
-        uninstallBtn.onclick = async () => {
-            // تحذير خاص لتطبيقات النظام
-            let msg = t("confirmUninstall") + "\n\n" + app.package;
-            if (currentTab === 'system') {
-                msg = "⚠️ " + t("systemAppWarning") + "\n\n" + msg;
-            }
-            if (!confirm(msg)) return;
-
-            uninstallBtn.disabled = true;
-            uninstallBtn.textContent = "...";
-            const result = await installer.uninstallApp(app.package);
-            if (result.ok) {
-                // إزالة التطبيق من القائمة
-                const idx = appsCache[currentTab].findIndex(a => a.package === app.package);
-                if (idx !== -1) appsCache[currentTab].splice(idx, 1);
-                renderApps();
-                if (currentTab === 'user') userAppsCount.textContent = appsCache.user.length;
-                else systemAppsCount.textContent = appsCache.system.length;
-            } else {
-                uninstallBtn.textContent = `✗ فشل`;
-                setTimeout(() => {
-                    uninstallBtn.textContent = `🗑 ${t("uninstall")}`;
-                    uninstallBtn.disabled = false;
-                }, 2000);
-            }
-        };
-
-        actions.appendChild(grantBtn);
-        actions.appendChild(launchBtn);
-        actions.appendChild(exportBtn);
-        actions.appendChild(uninstallBtn);
-
-        div.appendChild(header);
-        div.appendChild(actions);
-        appsList.appendChild(div);
-    }
-}
-
-// التبديل بين التبويبات
-tabUser.addEventListener("click", () => {
-    currentTab = 'user';
-    tabUser.classList.add("active");
-    tabSystem.classList.remove("active");
-    renderApps();
-});
-
-tabSystem.addEventListener("click", () => {
-    currentTab = 'system';
-    tabSystem.classList.add("active");
-    tabUser.classList.remove("active");
-    renderApps();
-});
-
-// زر تحديث التطبيقات
-refreshAppsBtn.addEventListener("click", () => loadApps(true));
-
-// زر اختبار (مؤقت)
-window.testPmInstall = async function() {
-    if (!installer || !installer.adb) {
-        console.log("No ADB connection");
-        return;
-    }
-
-    // اختبر أمر بسيط
-    const out1 = await installer.runShell(['echo "HELLO FROM SHELL"']);
-    console.log("Test 1 (echo):", JSON.stringify(out1));
-
-    // اختبر ls
-    const out2 = await installer.runShell(['ls -la /data/local/tmp/']);
-    console.log("Test 2 (ls):", JSON.stringify(out2));
-
-    // اختبر pm
-    const out3 = await installer.runShell(['pm list packages | head -3']);
-    console.log("Test 3 (pm):", JSON.stringify(out3));
-
-    // اختبر pm install
-    const out4 = await installer.runShell([
-        'cd /data/local/tmp',
-        'pm install "basse.apk"'
-    ]);
-    console.log("Test 4 (pm install):", JSON.stringify(out4));
-};
-
-console.log("👉 testPmInstall() متاح في Console");
