@@ -213,40 +213,46 @@ export class AdbInstaller {
     }
 
     async runShell(commands, timeoutMs = 180000) {
-        const pty = await this.adb.subprocess.noneProtocol.pty();
-        const encoder = new TextEncoder();
-        const decoder = new TextDecoder();
-        let output = "";
-        let timedOut = false;
-        const timer = setTimeout(() => { timedOut = true; try { pty.kill(); } catch (e) {} }, timeoutMs);
+    const pty = await this.adb.subprocess.noneProtocol.pty();
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    let output = "";
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; try { pty.kill(); } catch (e) {} }, timeoutMs);
 
-        const readDone = (async () => {
-            const reader = pty.output.getReader();
-            try {
-                for (;;) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value) output += decoder.decode(value, { stream: true });
-                }
-            } catch (e) {}
-        })();
-
-        const writer = pty.input.getWriter();
+    const readDone = (async () => {
+        const reader = pty.output.getReader();
         try {
-            for (const cmd of commands) {
-                await writer.write(encoder.encode(cmd + "\n"));
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) output += decoder.decode(value, { stream: true });
             }
-            await writer.write(encoder.encode("exit\n"));
-        } catch (e) {} finally {
-            try { writer.releaseLock(); } catch (e) {}
+        } catch (e) {}
+    })();
+
+    const writer = pty.input.getWriter();
+    try {
+        for (const cmd of commands) {
+            await writer.write(encoder.encode(cmd + "\n"));
+            // ✅ انتظر بين الأوامر لضمان التنفيذ
+            await new Promise(r => setTimeout(r, 500));
         }
 
-        await readDone;
-        clearTimeout(timer);
-        if (timedOut) output += "\n[Timeout]";
-        return output;
+        // ✅ انتظر وقتاً كافياً لآخر أمر (خاصة pm install)
+        await new Promise(r => setTimeout(r, 5000));
+
+        // ✅ أرسل exit فقط بعد الانتهاء
+        await writer.write(encoder.encode("exit\n"));
+    } catch (e) {} finally {
+        try { writer.releaseLock(); } catch (e) {}
     }
 
+    await readDone;
+    clearTimeout(timer);
+    if (timedOut) output += "\n[Timeout]";
+    return output;
+}
     // ==================== Helper Installer Protocol ====================
 
     async ensureHelperOnDevice() {
