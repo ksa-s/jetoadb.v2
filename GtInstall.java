@@ -30,36 +30,35 @@ public class GtInstall {
             Object activityThread = null;
             Context context = null;
 
-                // المحاولة 1: currentActivityThread (الأكثر شيوعاً)
-        try {
-            activityThread = activityThreadClass.getMethod("currentActivityThread").invoke(null);
+            // المحاولة 1: currentActivityThread
+            try {
+                activityThread = activityThreadClass.getMethod("currentActivityThread").invoke(null);
             } catch (Exception e1) {
-                // المحاولة 2: systemMain (بعض الإصدارات)
-        try {
-            activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
-            } catch (Exception e2) {
-            System.out.println("GT_INSTALL_FAIL NO_ACTIVITY_THREAD");
-            System.out.println("GT_RC 1");
-            return;
-        }
-    }
+                // المحاولة 2: systemMain
+                try {
+                    activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
+                } catch (Exception e2) {
+                    System.out.println("GT_INSTALL_FAIL NO_ACTIVITY_THREAD");
+                    System.out.println("GT_RC 1");
+                    return;
+                }
+            }
 
-                // الحصول على Context
-        try {
-            context = (Context) activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
-        } catch (Exception e) {
-                // محاولة بديلة: getApplication
-        try {
-            context = (Context) activityThreadClass.getMethod("getApplication").invoke(activityThread);
-        } catch (Exception e2) {
-            System.out.println("GT_INSTALL_FAIL NO_CONTEXT: " + e.getMessage());
-            System.out.println("GT_RC 1");
-            return;
-        }
-    }
+            // الحصول على Context
+            try {
+                context = (Context) activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
+            } catch (Exception e) {
+                try {
+                    context = (Context) activityThreadClass.getMethod("getApplication").invoke(activityThread);
+                } catch (Exception e2) {
+                    System.out.println("GT_INSTALL_FAIL NO_CONTEXT: " + e.getMessage());
+                    System.out.println("GT_RC 1");
+                    return;
+                }
+            }
 
             if (context == null) {
-                System.out.println("GT_INSTALL_FAIL NO_CONTEXT");
+                System.out.println("GT_INSTALL_FAIL NULL_CONTEXT");
                 System.out.println("GT_RC 1");
                 return;
             }
@@ -87,17 +86,16 @@ public class GtInstall {
 
             Intent intent = new Intent("com.garagetool.INSTALL_RESULT");
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-// FLAG_MUTABLE متاح فقط من API 31+
-if (android.os.Build.VERSION.SDK_INT >= 31) {
-    try {
-        flags |= PendingIntent.class.getField("FLAG_MUTABLE").getInt(null);
-    } catch (Exception e) {
-        // تجاهل - نستخدم FLAG_UPDATE_CURRENT وحده
-    }
-}
-PendingIntent pendingIntent = PendingIntent.getBroadcast(
-    context, sessionId, intent, flags
-);
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                try {
+                    flags |= PendingIntent.class.getField("FLAG_MUTABLE").getInt(null);
+                } catch (Exception e) {
+                    // تجاهل
+                }
+            }
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                context, sessionId, intent, flags
+            );
 
             session.commit(pendingIntent.getIntentSender());
             session.close();
