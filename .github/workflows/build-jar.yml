@@ -38,10 +38,10 @@ jobs:
           ls -lh /tmp/android.jar
           file /tmp/android.jar
 
-      - name: Compile GtInstall.java
+            - name: Compile GtInstall.java
         run: |
           mkdir -p build/com/garagetool/installer
-          javac -source 8 -target 8 -cp android.jar -d build GtInstall.java
+          javac -source 8 -target 8 -cp /tmp/android.jar -d build GtInstall.java
           find build -type f
 
       - name: Package into g.jar
