@@ -4,8 +4,6 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInstaller;
-import android.os.Bundle;
-import android.os.IBinder;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.OutputStream;
@@ -28,7 +26,6 @@ public class GtInstall {
         }
 
         try {
-            // الحصول على سياق النظام عبر Reflection
             Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
             Object activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
             Context context = (Context) activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
