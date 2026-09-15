@@ -496,23 +496,31 @@ export class AdbInstaller {
             }
         }
 
-        // ✅ المحاولة 1: pm install مباشر
-        this.log(`> pm install -r "${remoteName}"`, "prompt");
-        outputText = await this.runShell([
-            `pm install -r "${PUSH_PRIMARY_DIR}/${remoteName}"`
-        ]);
-        installed = outputText.includes("Success");
+        // ✅ المحاولة 1: pm install -r -g
+this.log(`> pm install -r -g "${remoteName}"`, "prompt");
+outputText = await this.runShell([
+    `pm install -r -g "${PUSH_PRIMARY_DIR}/${remoteName}"`
+]);
+installed = outputText.includes("Success");
 
-        // ✅ المحاولة 2: cat | pm install -S
-        if (!installed) {
-            this.log(`> cat "${remoteName}" | pm install -S ${apkBytes.length}`, "prompt");
-            outputText = await this.runShell([
-                `cd ${PUSH_PRIMARY_DIR}`,
-                `cat "${remoteName}" | pm install -S ${apkBytes.length}`
-            ]);
-            installed = outputText.includes("Success");
-        }
+// ✅ المحاولة 2: cat | pm install -r -g -S
+if (!installed) {
+    this.log(`> cat "${remoteName}" | pm install -r -g -S ${apkBytes.length}`, "prompt");
+    outputText = await this.runShell([
+        `cd ${PUSH_PRIMARY_DIR}`,
+        `cat "${remoteName}" | pm install -r -g -S ${apkBytes.length}`
+    ]);
+    installed = outputText.includes("Success");
+}
 
+// ✅ المحاولة 3: cmd package install (طريقة بديلة)
+if (!installed) {
+    this.log(`> cmd package install -r -g -S ${apkBytes.length}`, "prompt");
+    outputText = await this.runShell([
+        `cmd package install -r -g -S ${apkBytes.length} --install-location 0`
+    ]);
+    installed = outputText.includes("Success");
+}
         // ✅ المحاولة 3: البروتوكول الاحتياطي
         if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
             try {
