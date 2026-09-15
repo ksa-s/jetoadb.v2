@@ -1,114 +1,250 @@
 package com.garagetool.installer;
 
-import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentSender;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
+import android.content.pm.PackageManager;
+import android.os.Binder;
+import android.os.IBinder;
+import android.os.Looper;
+import android.os.Parcel;
+
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
-public class GtInstall {
-    public static void main(String[] args) {
-        if (args.length < 1) {
-            System.out.println("GT_INSTALL_FAIL NO_ARGS");
-            System.out.println("GT_RC 1");
+/**
+ * GtInstall — Helper Installer via app_process
+ * Reconstructed from smali of original g.jar (71.6 KB).
+ */
+public final class GtInstall {
+
+    private static final long WAIT_SECONDS = 300L;
+    private static final CountDownLatch done = new CountDownLatch(1);
+    private static volatile int status = -1;
+    private static volatile String statusMessage = null;
+
+    // ==================== IntentSender عبر Binder مخصص ====================
+    private static IntentSender statusReceiver() throws Exception {
+        IBinder binder = new Binder() {
+            @Override
+            protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
+                try {
+                    data.enforceInterface("android.content.IIntentSender");
+                    data.readInt();
+                    boolean hasIntent = data.readInt() != 0;
+                    Intent intent = hasIntent
+                            ? Intent.CREATOR.createFromParcel(data)
+                            : null;
+
+                    if (intent != null) {
+                        status = intent.getIntExtra("android.content.pm.extra.STATUS", -1);
+                        statusMessage = intent.getStringExtra("android.content.pm.extra.STATUS_MESSAGE");
+                        done.countDown();
+                    }
+                } catch (Throwable t) {
+                    // ignore
+                }
+                if (reply != null) reply.writeNoException();
+                return true;
+            }
+        };
+
+        // Binder غير معروف لـ IntentSender — نستخدم reflection
+        java.lang.reflect.Constructor<IntentSender> ctor =
+                IntentSender.class.getConstructor(IBinder.class);
+        ctor.setAccessible(true);
+        return ctor.newInstance(binder);
+    }
+
+    // ==================== الحصول على سياق النظام ====================
+    private static Context systemContext() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object thread = at.getMethod("systemMain").invoke(null);
+            return (Context) at.getMethod("getSystemContext").invoke(thread);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    // ==================== طباعة ====================
+    private static void say(String msg) {
+        System.out.println("GT_ " + msg);
+        System.out.flush();
+    }
+
+    private static void fail(String code, String msg) {
+        System.out.println("GT_INSTALL_FAIL " + code + " " + (msg == null ? "" : msg));
+        System.out.flush();
+    }
+
+    private static void ok(PackageManager pm, String pkg) {
+        int versionCode = -1;
+        try {
+            versionCode = pm.getPackageInfo(pkg, 0).versionCode;
+        } catch (Throwable ignored) {}
+        System.out.println("GT_INSTALL_OK " + pkg + " " + versionCode);
+        System.out.flush();
+    }
+
+    private static boolean installedNow(PackageManager pm, String pkg, PackageInfo expected) {
+        try {
+            PackageInfo installed = pm.getPackageInfo(pkg, 0);
+            if (installed != null && installed.versionCode == expected.versionCode) {
+                ok(pm, pkg);
+                return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
+    private static String short_(Throwable t) {
+        Throwable cause = t.getCause() != null ? t.getCause() : t;
+        String msg = cause.getMessage();
+        return cause.getClass().getSimpleName() + (msg == null ? "" : ": " + msg);
+    }
+
+    // ==================== التشغيل الرئيسي ====================
+    private static void run(String[] args) throws Exception {
+        if (args == null || args.length < 1 || args[0] == null
+                || args[0].trim().isEmpty()) {
+            fail("NO_ARG", "укажи путь к APK первым аргументом");
             return;
         }
 
-        String apkPath = args[0];
-        File apkFile = new File(apkPath);
+        File apkFile = new File(args[0].trim());
+        if (!apkFile.isFile() || apkFile.length() <= 0) {
+            fail("NO_FILE", "не вижу файла " + apkFile.getAbsolutePath());
+            return;
+        }
 
-        if (!apkFile.exists()) {
-            System.out.println("GT_INSTALL_FAIL NO_FILE");
-            System.out.println("GT_RC 1");
+        Looper.prepareMainLooper();
+
+        Context context = systemContext();
+        if (context == null) {
+            fail("NO_CONTEXT", "нет системного контекста, запускать через app_process");
+            return;
+        }
+
+        PackageManager pm = context.getPackageManager();
+
+        PackageInfo info = pm.getPackageArchiveInfo(apkFile.getAbsolutePath(), 0);
+        if (info == null || info.packageName == null) {
+            fail("BAD_APK", "файл не читается как APK");
+            return;
+        }
+
+        String pkg = info.packageName;
+        say("target " + pkg + " size " + apkFile.length());
+
+        PackageInstaller installer = pm.getPackageInstaller();
+        PackageInstaller.SessionParams params =
+                new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setSize(apkFile.length());
+
+        int sessionId;
+        try {
+            sessionId = installer.createSession(params);
+        } catch (Throwable t) {
+            fail("SESSION", short_(t));
+            return;
+        }
+        say("session " + sessionId);
+
+        PackageInstaller.Session session;
+        try {
+            session = installer.openSession(sessionId);
+        } catch (Throwable t) {
+            fail("OPEN", short_(t));
             return;
         }
 
         try {
-            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-            Object activityThread = null;
-            Context context = null;
-
-            // المحاولة 1: currentActivityThread
+            FileInputStream fis = new FileInputStream(apkFile);
             try {
-                activityThread = activityThreadClass.getMethod("currentActivityThread").invoke(null);
-            } catch (Exception e1) {
-                // المحاولة 2: systemMain
+                OutputStream out = session.openWrite("base.apk", 0, apkFile.length());
                 try {
-                    activityThread = activityThreadClass.getMethod("systemMain").invoke(null);
-                } catch (Exception e2) {
-                    System.out.println("GT_INSTALL_FAIL NO_ACTIVITY_THREAD");
-                    System.out.println("GT_RC 1");
-                    return;
+                    byte[] buf = new byte[65536];
+                    long written = 0;
+                    int n;
+                    while ((n = fis.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        written += n;
+                    }
+                    out.flush();
+                    session.fsync(out);
+
+                    if (written != apkFile.length()) {
+                        fail("WRITE", "записано " + written + " из " + apkFile.length());
+                        return;
+                    }
+                    say("written " + written);
+                } finally {
+                    try { out.close(); } catch (Throwable ignored) {}
                 }
+            } finally {
+                try { fis.close(); } catch (Throwable ignored) {}
             }
 
-            // الحصول على Context
+            // === إرسال الالتزام ===
+            IntentSender sender;
             try {
-                context = (Context) activityThreadClass.getMethod("getSystemContext").invoke(activityThread);
-            } catch (Exception e) {
-                try {
-                    context = (Context) activityThreadClass.getMethod("getApplication").invoke(activityThread);
-                } catch (Exception e2) {
-                    System.out.println("GT_INSTALL_FAIL NO_CONTEXT: " + e.getMessage());
-                    System.out.println("GT_RC 1");
-                    return;
-                }
-            }
-
-            if (context == null) {
-                System.out.println("GT_INSTALL_FAIL NULL_CONTEXT");
-                System.out.println("GT_RC 1");
+                sender = statusReceiver();
+            } catch (Throwable t) {
+                try { session.abandon(); } catch (Throwable ignored) {}
+                fail("NO_SENDER", "скрытый конструктор IntentSender недоступен: " + short_(t));
                 return;
             }
 
-            PackageInstaller installer = context.getPackageManager().getPackageInstaller();
-            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
-                PackageInstaller.SessionParams.MODE_FULL_INSTALL
-            );
-            params.setInstallLocation(1);
-
-            int sessionId = installer.createSession(params);
-            PackageInstaller.Session session = installer.openSession(sessionId);
-
-            long size = apkFile.length();
-            OutputStream out = session.openWrite("base.apk", 0, size);
-            FileInputStream in = new FileInputStream(apkFile);
-            byte[] buffer = new byte[65536];
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                out.write(buffer, 0, read);
+            try {
+                session.commit(sender);
+            } catch (Throwable t) {
+                try { session.abandon(); } catch (Throwable ignored) {}
+                fail("COMMIT", short_(t));
+                return;
+            } finally {
+                try { session.close(); } catch (Throwable ignored) {}
             }
-            session.fsync(out);
-            in.close();
-            out.close();
 
-            Intent intent = new Intent("com.garagetool.INSTALL_RESULT");
-            int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-            if (android.os.Build.VERSION.SDK_INT >= 31) {
-                try {
-                    flags |= PendingIntent.class.getField("FLAG_MUTABLE").getInt(null);
-                } catch (Exception e) {
-                    // تجاهل
-                }
+            say("committed, ждём ответ системы");
+
+            // === انتظار النتيجة ===
+            boolean signaled = done.await(WAIT_SECONDS, TimeUnit.SECONDS);
+
+            if (!signaled) {
+                if (installedNow(pm, pkg, info)) return;
+                fail("TIMEOUT", "система не ответила за " + WAIT_SECONDS + " с");
+                return;
             }
-            PendingIntent pendingIntent = PendingIntent.getBroadcast(
-                context, sessionId, intent, flags
-            );
 
-            session.commit(pendingIntent.getIntentSender());
-            session.close();
+            if (status == 0) {
+                ok(pm, pkg);
+                return;
+            }
 
-            String pkgName = context.getPackageManager()
-                .getPackageArchiveInfo(apkPath, 0).packageName;
+            if (installedNow(pm, pkg, info)) return;
 
-            System.out.println("GT_INSTALL_OK " + pkgName);
-            System.out.println("GT_RC 0");
-
-        } catch (Exception e) {
-            System.out.println("GT_INSTALL_FAIL EXCEPTION " + e.getMessage());
-            System.out.println("GT_RC 1");
+            fail("COMMIT", "status=" + status
+                    + (statusMessage == null ? "" : " " + statusMessage));
+        } finally {
+            try { session.close(); } catch (Throwable ignored) {}
         }
     }
+
+    public static void main(String[] args) {
+        try {
+            run(args);
+        } catch (Throwable t) {
+            fail("COMMIT", short_(t));
+        }
+        System.exit(0);
+    }
+
+    private GtInstall() {}
 }
