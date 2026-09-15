@@ -29,8 +29,17 @@ jobs:
 
       - name: Download R8 (contains d8)
         run: |
-          wget -q https://repo1.maven.org/maven2/com/android/tools/r8/8.2.42/r8-8.2.42.jar -O r8.jar
+          # محاولة روابط متعددة (Google Maven أولاً)
+          wget -q --timeout=60 https://maven.google.com/com/android/tools/r8/8.2.42/r8-8.2.42.jar -O r8.jar || \
+          wget -q --timeout=60 https://dl.google.com/dl/android/maven2/com/android/tools/r8/8.2.42/r8-8.2.42.jar -O r8.jar || \
+          wget -q --timeout=60 https://repo1.maven.org/maven2/com/android/tools/r8/8.2.42/r8-8.2.42.jar -O r8.jar
+          
+          if [ ! -s r8.jar ] || [ $(stat -c%s r8.jar) -lt 1000000 ]; then
+            echo "ERROR: R8 download failed!"
+            exit 1
+          fi
           ls -lh r8.jar
+          file r8.jar
 
       - name: Compile GtInstall.java
         run: |
