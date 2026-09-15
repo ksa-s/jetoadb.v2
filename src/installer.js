@@ -8,7 +8,7 @@ import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
 import { t } from "./i18n.js";
 
 // ---------- ثوابت البروتوكول ----------
-const HELPER_JAR_URL = "./tools/g.jar";
+const HELPER_JAR_URL = "./tools/g.jar?v=" + Date.now();
 const HELPER_JAR_PATH = "/data/local/tmp/g.jar";
 const HELPER_SH_PATH = "/data/local/tmp/r.sh";
 const HELPER_JAR_BYTES_EXPECTED = 0;
