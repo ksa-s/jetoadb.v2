@@ -1,5 +1,8 @@
 // =====================================================================
-//  installer.js — WebADB + Helper Installer Protocol (v3.0)
+//  installer.js — WebADB + Helper Installer Protocol (v3.1)
+//  FIX: replaced PTY-based runShell with spawnWaitText (root cause fix)
+//  FIX: grantPermissions now checks output text for real errors
+//  FIX: install sequence cleaned up + more methods added
 // =====================================================================
 
 import { Adb, AdbDaemonTransport } from "@yume-chan/adb";
@@ -17,7 +20,7 @@ const PUSH_PRIMARY_DIR = "/data/local/tmp";
 const PUSH_FALLBACK_DIR = "/sdcard/Download";
 const PUSH_TRIES = 3;
 const PUSH_CHUNK = 1024 * 1024;
-const SIGN_API_URL = "/api/sign"; // سيتم استبداله بـ Vercel URL لاحقاً
+const SIGN_API_URL = "/api/sign";
 
 let helperJarBytes = null;
 let helperDelivered = false;
@@ -60,7 +63,7 @@ export class AdbInstaller {
         this.adb = null;
         this.log = logFn || console.log;
         this.device = null;
-        this.installMode = options.installMode || 'pm-shell'; // pm-shell | oem | push | spawn
+        this.installMode = options.installMode || 'pm-shell';
         this.shellPassword = options.shellPassword || null;
         this.autoSign = options.autoSign || false;
         this.deviceOwnerReceiver = options.deviceOwnerReceiver || null;
@@ -87,41 +90,99 @@ export class AdbInstaller {
 
     async grantPermissions(pkg) {
         if (!this.adb) return { ok: false, error: "No ADB" };
-        const cmds = [
-            `appops set ${pkg} SYSTEM_ALERT_WINDOW allow`,
-            `appops set ${pkg} REQUEST_INSTALL_PACKAGES allow`,
-            `appops set ${pkg} MANAGE_EXTERNAL_STORAGE allow`,
-            `appops set ${pkg} WRITE_SETTINGS allow`,
-            `appops set ${pkg} PACKAGE_USAGE_STATS allow`,
-            `pm grant ${pkg} android.permission.READ_EXTERNAL_STORAGE`,
-            `pm grant ${pkg} android.permission.WRITE_EXTERNAL_STORAGE`,
-            `pm grant ${pkg} android.permission.ACCESS_FINE_LOCATION`,
-            `pm grant ${pkg} android.permission.ACCESS_COARSE_LOCATION`,
-            `pm grant ${pkg} android.permission.READ_PHONE_STATE`,
-            `pm grant ${pkg} android.permission.RECORD_AUDIO`,
-            `pm grant ${pkg} android.permission.CAMERA`,
-            `pm grant ${pkg} android.permission.CALL_PHONE`,
-            `pm grant ${pkg} android.permission.SEND_SMS`,
-            `pm grant ${pkg} android.permission.RECEIVE_SMS`,
-            `pm enable ${pkg}`,
+
+        // ─── FIX: نفصل appops عن pm grant ونتحقق من المخرجات ───
+
+        // appops: نجرب الأمرين (appops set + cmd appops set)
+        const appopsList = [
+            'SYSTEM_ALERT_WINDOW',
+            'REQUEST_INSTALL_PACKAGES',
+            'MANAGE_EXTERNAL_STORAGE',
+            'WRITE_SETTINGS',
+            'PACKAGE_USAGE_STATS',
         ];
+
+        // أذونات خطرة dangerous permissions (يجب أن تكون مُعلَنة في manifest)
+        const dangerousPerms = [
+            'android.permission.READ_EXTERNAL_STORAGE',
+            'android.permission.WRITE_EXTERNAL_STORAGE',
+            'android.permission.ACCESS_FINE_LOCATION',
+            'android.permission.ACCESS_COARSE_LOCATION',
+            'android.permission.READ_PHONE_STATE',
+            'android.permission.RECORD_AUDIO',
+            'android.permission.CAMERA',
+            'android.permission.CALL_PHONE',
+            'android.permission.SEND_SMS',
+            'android.permission.RECEIVE_SMS',
+        ];
+
         let success = 0, fail = 0;
-        for (const cmd of cmds) {
+
+        // منح appops
+        for (const op of appopsList) {
             try {
-                await this.adb.subprocess.noneProtocol.spawnWaitText(cmd);
-                success++;
+                // محاولة 1: appops set مباشرة
+                let out = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                    `appops set ${pkg} ${op} allow 2>&1`
+                );
+                if (!out || /error|exception|unknown/i.test(out)) {
+                    // محاولة 2: cmd appops set
+                    out = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                        `cmd appops set --uid ${pkg} ${op} allow 2>&1`
+                    );
+                }
+                if (out && /error|exception/i.test(out) && !/not a changeable/i.test(out)) {
+                    fail++;
+                    this.log(`  ⚠ appops ${op}: ${out.trim().slice(0, 80)}`, "warn");
+                } else {
+                    success++;
+                    this.log(`  ✓ appops ${op}`, "ok");
+                }
+            } catch (e) {
+                fail++;
+                this.log(`  ✗ appops ${op}: ${e.message}`, "warn");
+            }
+        }
+
+        // منح الأذونات الخطرة
+        for (const perm of dangerousPerms) {
+            try {
+                const out = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                    `pm grant ${pkg} ${perm} 2>&1`
+                );
+                const outStr = String(out || "").toLowerCase();
+                // فشل متوقع: permission not declared أو not a changeable → ليس خطأ حقيقياً
+                if (outStr.includes("not declared") ||
+                    outStr.includes("not a changeable") ||
+                    outStr.includes("unknown permission") ||
+                    outStr.trim() === "") {
+                    // مقبول — لم تُعلَن في manifest أو غير قابلة للمنح
+                } else if (outStr.includes("error") || outStr.includes("exception") || outStr.includes("failed")) {
+                    fail++;
+                    this.log(`  ⚠ grant ${perm.split('.').pop()}: ${out.trim().slice(0, 60)}`, "warn");
+                } else {
+                    success++;
+                    this.log(`  ✓ grant ${perm.split('.').pop()}`, "ok");
+                }
             } catch (e) {
                 fail++;
             }
         }
-        // تشغيل الوضع الآمن للجغرافيا إذا طُلب
+
+        // تفعيل التطبيق
+        try {
+            await this.adb.subprocess.noneProtocol.spawnWaitText(`pm enable ${pkg} 2>&1`);
+            this.log(`  ✓ pm enable ${pkg}`, "ok");
+        } catch (e) {}
+
+        // تفعيل وضع الموقع (اختياري)
         if (this.installMode === 'push') {
             try {
-                await this.adb.subprocess.noneProtocol.spawnWaitText("settings put secure location_mode 3");
-                this.log(`✓ ${pkg}: تم تفعيل GPS mode 3`, "ok");
+                await this.adb.subprocess.noneProtocol.spawnWaitText("settings put secure location_mode 3 2>&1");
             } catch (e) {}
         }
-        this.log(`✓ ${pkg}: ${success} أذونات ناجحة، ${fail} فشلت`, "ok");
+
+        this.log(`✓ ${pkg}: ${success} أذونات ناجحة، ${fail} فشلت/مُتجاهَلة`, "ok");
         return { ok: true, success, fail };
     }
 
@@ -169,9 +230,7 @@ export class AdbInstaller {
             }
             const sourcePath = match[1].trim();
             const destPath = `/sdcard/Download/${pkg.split('.').pop()}_${Date.now()}.apk`;
-            await this.adb.subprocess.noneProtocol.spawnWaitText(
-                `cp "${sourcePath}" "${destPath}"`
-            );
+            await this.adb.subprocess.noneProtocol.spawnWaitText(`cp "${sourcePath}" "${destPath}"`);
             this.log(`📦 ${pkg}: تم التصدير إلى ${destPath}`, "ok");
             return { ok: true, path: destPath };
         } catch (e) {
@@ -184,9 +243,7 @@ export class AdbInstaller {
 
     async verifyGrants(pkg, postInstall = []) {
         const verdicts = [];
-
         try {
-            // التحقق من appops
             const appopsOut = await this.runShell([`appops get ${pkg}`], 30000);
             const otvetil = Boolean(appopsOut && appopsOut.trim());
 
@@ -199,7 +256,6 @@ export class AdbInstaller {
                 });
             }
 
-            // التحقق من dpm (إذا طُلب)
             if (this.deviceOwnerReceiver) {
                 const dpmOut = await this.runShell(['dumpsys device_policy'], 30000);
                 const hasDpm = /Device Policy Manager|device.?policy/i.test(dpmOut || '');
@@ -227,10 +283,7 @@ export class AdbInstaller {
             this.log(`🔐 توقيع ${apkName} على السيرفر...`);
             const res = await fetch(SIGN_API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/octet-stream',
-                    'X-APK-Name': apkName
-                },
+                headers: { 'Content-Type': 'application/octet-stream', 'X-APK-Name': apkName },
                 body: bytes,
             });
             if (!res.ok) {
@@ -291,76 +344,39 @@ export class AdbInstaller {
         }
     }
 
-    // ✅ إصلاح: runShell مع تأخير بعد كل أمر
-    async runShell(commands, timeoutMs = 180000) {
-    const pty = await this.adb.subprocess.noneProtocol.pty();
-    const encoder = new TextEncoder();
-    const decoder = new TextDecoder();
-    let output = "";
-    let timedOut = false;
-    let markerCount = 0;
+    // =====================================================================
+    //  runShell — FIX: استبدال PTY بـ spawnWaitText
+    //
+    //  المشكلة السابقة: PTY يُعيد إرسال (echo) الأمر المُدخَل،
+    //  فكان الكود يرى علامة "__END__" قبل تنفيذ الأمر فعلياً،
+    //  مما يجعل التثبيت ينتهي قبل اكتماله.
+    //
+    //  الحل: spawnWaitText ينتظر حقاً حتى ينتهي الأمر ويُعيد كل المخرجات.
+    // =====================================================================
+    async runShell(commands, timeoutMs = 60000) {
+        const cmds = Array.isArray(commands) ? commands : [commands];
 
-    const timer = setTimeout(() => {
-        timedOut = true;
-        try { pty.kill(); } catch (e) {}
-    }, timeoutMs);
+        // ندمج الأوامر في أمر shell واحد للحفاظ على سياق cd وغيره
+        const script = cmds.join('; ');
 
-    // قراءة المخرجات
-    const readDone = (async () => {
-        const reader = pty.output.getReader();
+        let text = "";
         try {
-            for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (value) {
-                    output += decoder.decode(value, { stream: true });
-                    // طباعة مباشرة للسجل
-                    const lines = decoder.decode(value, { stream: false }).split('\n');
-                    for (const line of lines) {
-                        if (line.trim()) this.log("  " + line.trim());
-                    }
-                }
-            }
-        } catch (e) {}
-    })();
-
-    const writer = pty.input.getWriter();
-
-    try {
-        // لكل أمر، أرسله وانتظر علامة النهاية
-        for (let i = 0; i < commands.length; i++) {
-            const cmd = commands[i];
-            markerCount++;
-            const marker = `__END_${markerCount}__`;
-
-            // إرسال الأمر ثم علامة النهاية
-            const fullCmd = `${cmd}; echo "${marker}"`;
-            await writer.write(encoder.encode(fullCmd + "\n"));
-
-            // انتظر ظهور علامة النهاية (بحد أقصى 60 ثانية)
-            const startTime = Date.now();
-            while (!output.includes(marker) && Date.now() - startTime < 60000) {
-                await new Promise(r => setTimeout(r, 200));
-            }
-
-            // انتظر إضافي لضمان اكتمال المخرجات
-            await new Promise(r => setTimeout(r, 500));
+            const result = await Promise.race([
+                this.adb.subprocess.noneProtocol.spawnWaitText(script),
+                new Promise((_, rej) =>
+                    setTimeout(() => rej(new Error("[Timeout]")), timeoutMs)
+                )
+            ]);
+            text = String(result || "");
+        } catch (e) {
+            text = `[Error: ${e.message}]`;
+            this.log(`  ${text}`, "err");
         }
 
-        // انتظر نهائي قبل exit
-        await new Promise(r => setTimeout(r, 2000));
-        await writer.write(encoder.encode("exit\n"));
-    } catch (e) {
-        console.error("runShell error:", e);
-    } finally {
-        try { writer.releaseLock(); } catch (e) {}
+        // طباعة المخرجات
+        text.split('\n').forEach(l => { if (l.trim()) this.log("  " + l.trim()); });
+        return text;
     }
-
-    await readDone;
-    clearTimeout(timer);
-    if (timedOut) output += "\n[Timeout]";
-    return output;
-}
 
     // ==================== Helper Installer Protocol ====================
 
@@ -377,6 +393,16 @@ export class AdbInstaller {
                 helperDead = "Failed to load helper: " + e.message;
                 return helperDead;
             }
+
+            // FIX: تحقق أن الملف JAR حقيقي (magic bytes PK) وليس placeholder
+            if (helperJarBytes.length < 100 ||
+                helperJarBytes[0] !== 0x50 || helperJarBytes[1] !== 0x4B) {
+                helperDead = "Helper JAR not built yet — run 'Build GtInstall.jar' workflow on GitHub first";
+                this.log(`⚠ ${helperDead}`, "warn");
+                helperJarBytes = null;
+                return helperDead;
+            }
+
             if (HELPER_JAR_BYTES_EXPECTED > 0 && helperJarBytes.length !== HELPER_JAR_BYTES_EXPECTED) {
                 helperDead = `Helper size mismatch (${helperJarBytes.length} vs ${HELPER_JAR_BYTES_EXPECTED})`;
                 helperJarBytes = null;
@@ -431,15 +457,28 @@ export class AdbInstaller {
         }
 
         this.log(t("helperInstalling"), "warn");
-        const out = await this.runShell([`sh ${HELPER_SH_PATH}`], 300000);
+
+        // تشغيل السكريبت — نستخدم spawnWaitText مباشرة مع timeout 300 ثانية
+        let out = "";
+        try {
+            out = await Promise.race([
+                this.adb.subprocess.noneProtocol.spawnWaitText(`sh ${HELPER_SH_PATH}`),
+                new Promise((_, rej) => setTimeout(() => rej(new Error("[Helper Timeout 300s]")), 300000))
+            ]);
+            out = String(out || "");
+        } catch (e) {
+            out = `[Error: ${e.message}]`;
+        }
+
         console.log("gt-install output:\n" + out);
+        out.split('\n').forEach(l => { if (l.trim()) this.log("  " + l.trim()); });
 
         const parse = this.parseHelperOutput(out);
         if (parse.ok) {
             const pkg = parse.pkg;
             let confirmed = null;
             try {
-                const pathOut = await this.runShell([`pm path ${pkg}`], 30000);
+                const pathOut = await this.adb.subprocess.noneProtocol.spawnWaitText(`pm path ${pkg}`);
                 confirmed = /package:\S+/.test(pathOut);
             } catch (e) {}
             if (confirmed === false) {
@@ -461,7 +500,7 @@ export class AdbInstaller {
     // ==================== التثبيت الرئيسي ====================
 
     async installApk(apkBytes, apkName, onProgress) {
-        // التوقيع التلقائي (إذا مُفعّل)
+        // التوقيع التلقائي
         if (this.autoSign) {
             try {
                 apkBytes = await this.signApk(apkBytes, apkName);
@@ -471,60 +510,85 @@ export class AdbInstaller {
         }
 
         let remoteName = apkName.replace(/[^A-Za-z0-9._-]/g, "_");
-        if (remoteName.length > 20) {
-            remoteName = "app_" + Date.now() + ".apk";
-        }
-        const remotePath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
+        if (remoteName.length > 40) remoteName = "app_" + Date.now() + ".apk";
+
+        let usedPath = `${PUSH_PRIMARY_DIR}/${remoteName}`;
         let outputText = "";
         let installed = false;
         let helperResult = null;
 
-        // رفع الملف
+        // ===== رفع APK مع fallback =====
+        let pushOk = false;
         for (let attempt = 0; attempt < PUSH_TRIES; attempt++) {
             try {
-                this.log(`$ push -> ${remotePath}`, "prompt");
-                await this.syncPushOnce(remotePath, apkBytes);
+                this.log(`$ sync → ${usedPath}`, "prompt");
+                await this.syncPushOnce(usedPath, apkBytes);
+                pushOk = true;
                 break;
             } catch (pushErr) {
                 outputText = pushErr.message;
+                if (isDirProblem(pushErr)) {
+                    // جرب المجلد الاحتياطي
+                    const fallback = `${PUSH_FALLBACK_DIR}/${remoteName}`;
+                    try {
+                        this.log(`$ sync → ${fallback} (fallback)`, "prompt");
+                        await this.syncPushOnce(fallback, apkBytes);
+                        usedPath = fallback;
+                        pushOk = true;
+                    } catch (e2) {
+                        outputText = e2.message;
+                        this.log(`✗ Push fallback failed: ${e2.message}`, "err");
+                    }
+                    break;
+                }
                 if (attempt < PUSH_TRIES - 1 && isTransient(pushErr)) {
                     this.log(`Retry ${attempt + 2}/${PUSH_TRIES}...`, "warn");
                     await sleep(1500 * (attempt + 1));
-                    continue;
+                } else {
+                    this.log(`✗ Push failed: ${pushErr.message}`, "err");
+                    break;
                 }
-                throw pushErr;
             }
         }
 
-        // ✅ المحاولة 1: pm install -r -g
-this.log(`> pm install -r -g "${remoteName}"`, "prompt");
-outputText = await this.runShell([
-    `pm install -r -g "${PUSH_PRIMARY_DIR}/${remoteName}"`
-]);
-installed = outputText.includes("Success");
+        if (!pushOk) {
+            return { ok: false, pkg: null, error: `Push failed: ${outputText}`, usedHelper: false };
+        }
 
-// ✅ المحاولة 2: cat | pm install -r -g -S
-if (!installed) {
-    this.log(`> cat "${remoteName}" | pm install -r -g -S ${apkBytes.length}`, "prompt");
-    outputText = await this.runShell([
-        `cd ${PUSH_PRIMARY_DIR}`,
-        `cat "${remoteName}" | pm install -r -g -S ${apkBytes.length}`
-    ]);
-    installed = outputText.includes("Success");
-}
+        // ===== طريقة 1: pm install -r -g =====
+        this.log(`> pm install -r -g "${usedPath}"`, "prompt");
+        outputText = await this.runShell([`pm install -r -g "${usedPath}"`], 120000);
+        installed = /\bSuccess\b/i.test(outputText);
 
-// ✅ المحاولة 3: cmd package install (طريقة بديلة)
-if (!installed) {
-    this.log(`> cmd package install -r -g -S ${apkBytes.length}`, "prompt");
-    outputText = await this.runShell([
-        `cmd package install -r -g -S ${apkBytes.length} --install-location 0`
-    ]);
-    installed = outputText.includes("Success");
-}
-        // ✅ المحاولة 3: البروتوكول الاحتياطي
-        if (!installed && !isDirProblem(outputText) && !isTransient(outputText)) {
+        // ===== طريقة 2: pm install -r -g -t (يسمح بـ debug APKs) =====
+        if (!installed) {
+            this.log(`> pm install -r -g -t "${usedPath}"`, "prompt");
+            outputText = await this.runShell([`pm install -r -g -t "${usedPath}"`], 120000);
+            installed = /\bSuccess\b/i.test(outputText);
+        }
+
+        // ===== طريقة 3: pm install --user 0 (تثبيت صريح للمستخدم الأساسي) =====
+        if (!installed) {
+            this.log(`> pm install -r -g --user 0 "${usedPath}"`, "prompt");
+            outputText = await this.runShell([`pm install -r -g --user 0 "${usedPath}"`], 120000);
+            installed = /\bSuccess\b/i.test(outputText);
+        }
+
+        // ===== طريقة 4: تثبيت عبر الـ stdin (stream install) =====
+        if (!installed && !PERMANENT_RE.test(outputText)) {
+            this.log(`> cat | pm install -S ${apkBytes.length}`, "prompt");
+            outputText = await this.runShell(
+                [`cat "${usedPath}" | pm install -r -g -t -S ${apkBytes.length} -`],
+                120000
+            );
+            installed = /\bSuccess\b/i.test(outputText);
+        }
+
+        // ===== طريقة 5: Helper JAR عبر app_process =====
+        if (!installed && !isDirProblem(outputText)) {
+            this.log(t("helperInstalling"), "warn");
             try {
-                helperResult = await this.installViaHelper(remotePath);
+                helperResult = await this.installViaHelper(usedPath);
             } catch (e) {
                 helperResult = { ok: false, code: "EXCEPTION", text: e.message, started: false };
             }
@@ -536,39 +600,51 @@ if (!installed) {
             }
         }
 
-        // منح الصلاحيات والتحقق
+        // ===== منح الأذونات والتحقق =====
         if (installed) {
-            const pkg = helperResult?.pkg || await this.getPackageFromApk(apkBytes);
+            const pkg = helperResult?.pkg || await this.getPackageFromApk(usedPath);
             if (pkg) {
                 await this.grantPermissions(pkg);
                 await this.verifyGrants(pkg, []);
             }
         }
 
-        // تنظيف
+        // ===== تنظيف =====
         try {
-            await this.runShell([`rm -f "${remotePath}"`], 10000);
+            await this.runShell([`rm -f "${usedPath}"`], 10000);
         } catch (e) {}
 
         return {
             ok: installed,
             pkg: helperResult?.pkg || null,
-            error: installed ? null : (helperResult ? this.helperErrorText(helperResult) : outputText.slice(0, 200)),
-            usedHelper: !!helperResult
+            error: installed ? null : (
+                helperResult ? this.helperErrorText(helperResult) : outputText.slice(0, 300)
+            ),
+            usedHelper: !!(helperResult?.ok)
         };
     }
 
-    async getPackageFromApk(bytes) {
-        // استخراج اسم الحزمة من APK (بسيط)
+    // FIX: نقبل remotePath كمعامل ونجرب aapt أولاً
+    async getPackageFromApk(remotePath) {
         try {
-            const out = await this.runShell([
-                `pm install --dry-run "${PUSH_PRIMARY_DIR}/temp.apk" 2>&1 | grep -oP 'Package \\K[^ ]+' | head -1`
-            ]);
-            const match = out.match(/([a-z][a-z0-9_.]+)/);
-            return match ? match[1] : null;
-        } catch (e) {
-            return null;
-        }
+            // محاولة 1: aapt dump badging (إن وُجد على الجهاز)
+            const aaptOut = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `aapt dump badging "${remotePath}" 2>/dev/null | grep "^package:" | head -1`
+            );
+            const aaptMatch = aaptOut && aaptOut.match(/name='([^']+)'/);
+            if (aaptMatch) return aaptMatch[1];
+
+            // محاولة 2: pm install --dry-run
+            const dryOut = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `pm install --dry-run "${remotePath}" 2>&1 | head -5`
+            );
+            if (dryOut) {
+                const m = dryOut.match(/package:?\s*([a-z][a-z0-9_.]+)/i) ||
+                          dryOut.match(/([a-z][a-z0-9_]{2,}(?:\.[a-z0-9_]+){2,})/);
+                if (m) return m[1];
+            }
+        } catch (e) {}
+        return null;
     }
 }
 
