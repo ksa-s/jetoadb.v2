@@ -27,7 +27,8 @@ let helperDelivered = false;
 let helperDead = "";
 
 // ---------- تعابير الفحص ----------
-const PERMANENT_RE = /cannot stat|no space left|read-only file system|permission denied|install_failed|is not auth|not enough space/i;
+// SecurityException: Restriction prevents installing → نتخطى فوراً للـ helper بدل تجربة 4 طرق
+const PERMANENT_RE = /cannot stat|no space left|read-only file system|permission denied|install_failed|is not auth|not enough space|restriction prevents|securityexception.*install/i;
 const TRANSIENT_RE = /transport endpoint|couldn't create file|broken pipe|input\/output error|bad address|stat failed|protocol fault|resource temporarily unavailable|econnreset|connection reset|network error|failed to fetch|load failed|no such file or directory|device is busy|timed?\s?out|device not found|device disconnected/i;
 
 function isTransient(text) {
@@ -94,12 +95,14 @@ export class AdbInstaller {
         // ─── FIX: نفصل appops عن pm grant ونتحقق من المخرجات ───
 
         // appops: نجرب الأمرين (appops set + cmd appops set)
+        // GET_USAGE_STATS هو الاسم الصحيح على Android 10+ (PACKAGE_USAGE_STATS قديم)
         const appopsList = [
             'SYSTEM_ALERT_WINDOW',
             'REQUEST_INSTALL_PACKAGES',
             'MANAGE_EXTERNAL_STORAGE',
             'WRITE_SETTINGS',
-            'PACKAGE_USAGE_STATS',
+            'GET_USAGE_STATS',       // الاسم الصحيح على Android 10+
+            'PACKAGE_USAGE_STATS',   // fallback للأجهزة القديمة
         ];
 
         // أذونات خطرة dangerous permissions (يجب أن تكون مُعلَنة في manifest)
@@ -144,25 +147,34 @@ export class AdbInstaller {
             }
         }
 
-        // منح الأذونات الخطرة
+        // منح الأذونات الخطرة — نجرب pm grant ثم pm grant --user 0 كـ fallback
         for (const perm of dangerousPerms) {
+            const shortName = perm.split('.').pop();
             try {
-                const out = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                let out = await this.adb.subprocess.noneProtocol.spawnWaitText(
                     `pm grant ${pkg} ${perm} 2>&1`
                 );
-                const outStr = String(out || "").toLowerCase();
-                // فشل متوقع: permission not declared أو not a changeable → ليس خطأ حقيقياً
+                let outStr = String(out || "").toLowerCase();
+
+                // بعض الأجهزة المقيّدة (DesaySV) ترفض pm grant → نجرب --user 0
+                if (outStr.includes("securityexception") || outStr.includes("restricted")) {
+                    out = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                        `pm grant --user 0 ${pkg} ${perm} 2>&1`
+                    );
+                    outStr = String(out || "").toLowerCase();
+                }
+
                 if (outStr.includes("not declared") ||
                     outStr.includes("not a changeable") ||
                     outStr.includes("unknown permission") ||
                     outStr.trim() === "") {
-                    // مقبول — لم تُعلَن في manifest أو غير قابلة للمنح
+                    // مقبول — غير مُعلَنة في manifest أو غير قابلة للمنح
                 } else if (outStr.includes("error") || outStr.includes("exception") || outStr.includes("failed")) {
                     fail++;
-                    this.log(`  ⚠ grant ${perm.split('.').pop()}: ${out.trim().slice(0, 60)}`, "warn");
+                    this.log(`  ⚠ grant ${shortName}: ${out.trim().slice(0, 60)}`, "warn");
                 } else {
                     success++;
-                    this.log(`  ✓ grant ${perm.split('.').pop()}`, "ok");
+                    this.log(`  ✓ grant ${shortName}`, "ok");
                 }
             } catch (e) {
                 fail++;
@@ -575,10 +587,11 @@ export class AdbInstaller {
         }
 
         // ===== طريقة 4: تثبيت عبر الـ stdin (stream install) =====
+        // ملاحظة: بعض الأجهزة (DesaySV) لا تقبل الـ - في النهاية → نجرب بدونها أولاً
         if (!installed && !PERMANENT_RE.test(outputText)) {
             this.log(`> cat | pm install -S ${apkBytes.length}`, "prompt");
             outputText = await this.runShell(
-                [`cat "${usedPath}" | pm install -r -g -t -S ${apkBytes.length} -`],
+                [`cat "${usedPath}" | pm install -r -g -t -S ${apkBytes.length}`],
                 120000
             );
             installed = /\bSuccess\b/i.test(outputText);
