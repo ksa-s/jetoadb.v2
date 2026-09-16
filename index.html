@@ -4,87 +4,118 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sam Soft — أداة تثبيت التطبيقات</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1>🚗 Sam Soft</h1>
-            <p class="subtitle">تثبيت التطبيقات على شاشات السيارات عبر USB</p>
-            <button id="langToggle" class="lang-btn">EN</button>
+    <div class="shell">
+
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">⬡</div>
+                <div class="brand-text">
+                    <span class="brand-name">Sam Soft</span>
+                    <span class="brand-tagline">مثبّت تطبيقات السيارات</span>
+                </div>
+            </div>
+            <div class="topbar-end">
+                <div class="status-pill" id="statusPill">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusLabel">غير متصل</span>
+                </div>
+                <button id="langToggle" class="lang-toggle">EN</button>
+            </div>
         </header>
 
-        <!-- اختيار الموديل -->
-        <section class="card">
-            <h2 data-i18n="selectModel">اختر موديل السيارة</h2>
-            <select id="modelSelect" class="model-select">
-                <option value="">— اختر —</option>
-                <option value="jetour-t2">Jetour T2</option>
-                <option value="jetour-x70">Jetour X70</option>
-                <option value="changan-cs55">Changan CS55 Plus</option>
-                <option value="haval-h6">Haval H6</option>
-                <option value="geely-coolray">Geely Coolray</option>
-                <option value="other">أخرى (عام)</option>
-            </select>
-            <p id="modelHint" class="hint"></p>
-        </section>
+        <main class="content">
 
-        <!-- الاتصال -->
-        <section class="card">
-            <h2 data-i18n="connect">الاتصال بالجهاز</h2>
-            <button id="connectBtn" class="btn btn-primary" disabled>
-                <span data-i18n="connectBtn">اتصال</span>
-            </button>
-            <button id="disconnectBtn" class="btn btn-secondary" hidden>
-                <span data-i18n="disconnectBtn">قطع الاتصال</span>
-            </button>
-            <div id="deviceInfo" class="device-info" hidden>
-                <span data-i18n="deviceModel">الموديل:</span>
-                <strong id="deviceModelText">—</strong>
-            </div>
-        </section>
+            <!-- اختيار الموديل -->
+            <section class="panel">
+                <span class="field-label" data-i18n="selectModel">موديل السيارة</span>
+                <div class="select-wrap">
+                    <select id="modelSelect" class="select-field">
+                        <option value="">— اختر الموديل —</option>
+                        <option value="jetour-t2">Jetour T2</option>
+                        <option value="jetour-x70">Jetour X70</option>
+                        <option value="changan-cs55">Changan CS55 Plus</option>
+                        <option value="haval-h6">Haval H6</option>
+                        <option value="geely-coolray">Geely Coolray</option>
+                        <option value="other">أخرى (عام)</option>
+                    </select>
+                    <span class="select-caret">▾</span>
+                </div>
+                <p id="modelHint" class="field-hint"></p>
+            </section>
 
-        <!-- رفع APK -->
-        <section class="card">
-            <h2 data-i18n="uploadApk">رفع ملفات APK</h2>
-            <div id="dropZone" class="drop-zone">
-                <p data-i18n="dropText">اسحب الملفات هنا أو انقر للاختيار</p>
-                <input type="file" id="apkInput" accept=".apk" multiple hidden />
-            </div>
-            <ul id="apkList" class="apk-list"></ul>
-            <button id="installBtn" class="btn btn-success" disabled>
-                <span data-i18n="installBtn">تثبيت</span>
-            </button>
-        </section>
+            <!-- الاتصال -->
+            <section class="panel">
+                <div id="deviceInfo" class="device-bar" hidden>
+                    <span class="device-bar-label" data-i18n="deviceModel">الجهاز المتصل</span>
+                    <strong id="deviceModelText" class="device-bar-value">—</strong>
+                </div>
+                <div class="connect-row">
+                    <button id="connectBtn" class="btn btn-primary" disabled>
+                        <span class="btn-icon">⚡</span>
+                        <span data-i18n="connectBtn">اتصال بالجهاز</span>
+                    </button>
+                    <button id="disconnectBtn" class="btn btn-ghost" hidden>
+                        <span data-i18n="disconnectBtn">قطع الاتصال</span>
+                    </button>
+                </div>
+            </section>
 
-        <!-- إدارة التطبيقات -->
-        <section class="card" id="appsManagerCard" hidden>
-            <h2>📱 إدارة التطبيقات</h2>
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="user" id="tabUser">
-                    <span data-i18n="userApps">التطبيقات المثبّتة</span>
-                    <span class="badge" id="userAppsCount">0</span>
+            <!-- رفع APK -->
+            <section class="panel">
+                <span class="field-label" data-i18n="uploadApk">ملفات APK</span>
+                <div id="dropZone" class="dropzone">
+                    <input type="file" id="apkInput" accept=".apk" multiple hidden />
+                    <div class="dropzone-body">
+                        <div class="dropzone-icon">⬆</div>
+                        <p class="dropzone-text" data-i18n="dropText">اسحب ملفات APK هنا أو انقر للاختيار</p>
+                        <p class="dropzone-hint">.apk files only</p>
+                    </div>
+                </div>
+                <ul id="apkList" class="apk-queue"></ul>
+                <button id="installBtn" class="btn btn-install" disabled>
+                    <span data-i18n="installBtn">تثبيت التطبيقات</span>
                 </button>
-                <button class="tab-btn" data-tab="system" id="tabSystem">
-                    <span data-i18n="systemApps">تطبيقات النظام</span>
-                    <span class="badge" id="systemAppsCount">0</span>
-                </button>
-                <button class="btn btn-primary refresh-btn" id="refreshAppsBtn">
-                    <span data-i18n="refresh">🔄 تحديث</span>
-                </button>
-            </div>
+            </section>
 
-            <div class="apps-list" id="appsList">
-                <p class="empty-msg" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
-            </div>
-        </section>
+            <!-- إدارة التطبيقات -->
+            <section class="panel" id="appsManagerCard" hidden>
+                <div class="section-head">
+                    <span class="section-title">📱 التطبيقات</span>
+                </div>
+                <div class="tab-bar">
+                    <button class="tab-btn active" id="tabUser">
+                        <span data-i18n="userApps">مُثبَّتة</span>
+                        <span class="tab-count" id="userAppsCount">0</span>
+                    </button>
+                    <button class="tab-btn" id="tabSystem">
+                        <span data-i18n="systemApps">نظام</span>
+                        <span class="tab-count" id="systemAppsCount">0</span>
+                    </button>
+                    <button class="tab-action" id="refreshAppsBtn">
+                        <span data-i18n="refresh">🔄 تحديث</span>
+                    </button>
+                </div>
+                <div class="apps-list" id="appsList">
+                    <p class="empty-state" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
+                </div>
+            </section>
 
-        <!-- طرفية السجل -->
-        <section class="card">
-            <h2 data-i18n="terminal">سجل العمليات</h2>
-            <div id="terminal" class="terminal"></div>
-        </section>
+            <!-- سجل العمليات -->
+            <section class="panel panel-terminal">
+                <div class="section-head">
+                    <span class="section-title" data-i18n="terminal">سجل العمليات</span>
+                    <button class="clear-btn" onclick="document.getElementById('terminal').innerHTML=''">مسح</button>
+                </div>
+                <div id="terminal" class="terminal"></div>
+            </section>
+
+        </main>
     </div>
-
     <script type="module" src="./src/main.js"></script>
 </body>
 </html>
