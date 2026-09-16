@@ -3,25 +3,28 @@ import { AdbInstaller } from "./installer.js";
 import { setLang, t, getLang } from "./i18n.js";
 
 // ---------- عناصر DOM ----------
-const modelSelect = document.getElementById("modelSelect");
-const modelHint = document.getElementById("modelHint");
-const connectBtn = document.getElementById("connectBtn");
-const disconnectBtn = document.getElementById("disconnectBtn");
-const deviceInfo = document.getElementById("deviceInfo");
-const deviceModelText = document.getElementById("deviceModelText");
-const dropZone = document.getElementById("dropZone");
-const apkInput = document.getElementById("apkInput");
-const apkList = document.getElementById("apkList");
-const installBtn = document.getElementById("installBtn");
-const terminal = document.getElementById("terminal");
-const langToggle = document.getElementById("langToggle");
-const appsManagerCard = document.getElementById("appsManagerCard");
-const tabUser = document.getElementById("tabUser");
-const tabSystem = document.getElementById("tabSystem");
+const modelSelect    = document.getElementById("modelSelect");
+const modelHint      = document.getElementById("modelHint");
+const connectBtn     = document.getElementById("connectBtn");
+const disconnectBtn  = document.getElementById("disconnectBtn");
+const deviceInfo     = document.getElementById("deviceInfo");
+const deviceModelText= document.getElementById("deviceModelText");
+const dropZone       = document.getElementById("dropZone");
+const apkInput       = document.getElementById("apkInput");
+const apkList        = document.getElementById("apkList");
+const installBtn     = document.getElementById("installBtn");
+const terminal       = document.getElementById("terminal");
+const langToggle     = document.getElementById("langToggle");
+const appsManagerCard= document.getElementById("appsManagerCard");
+const tabUser        = document.getElementById("tabUser");
+const tabSystem      = document.getElementById("tabSystem");
 const refreshAppsBtn = document.getElementById("refreshAppsBtn");
-const appsList = document.getElementById("appsList");
-const userAppsCount = document.getElementById("userAppsCount");
-const systemAppsCount = document.getElementById("systemAppsCount");
+const appsList       = document.getElementById("appsList");
+const userAppsCount  = document.getElementById("userAppsCount");
+const systemAppsCount= document.getElementById("systemAppsCount");
+// جديد: status pill
+const statusPill     = document.getElementById("statusPill");
+const statusLabel    = document.getElementById("statusLabel");
 
 // ---------- الحالة ----------
 let installer = null;
@@ -44,24 +47,27 @@ function log(text, cls) {
     terminal.scrollTop = terminal.scrollHeight;
 }
 
+// ---------- Status Pill ----------
+function setConnected(model) {
+    statusPill.classList.add("connected");
+    statusLabel.textContent = model || t("connected");
+}
+
+function setDisconnected() {
+    statusPill.classList.remove("connected");
+    statusLabel.textContent = getLang() === "ar" ? "غير متصل" : "Disconnected";
+}
+
 // ---------- اختيار الموديل ----------
 modelSelect.addEventListener("change", () => {
     const m = modelSelect.value;
-    if (!m) {
-        modelHint.textContent = "";
-        connectBtn.disabled = true;
-        return;
-    }
     modelHint.textContent = "";
-    connectBtn.disabled = false;
+    connectBtn.disabled = !m;
 });
 
 // ---------- الاتصال ----------
 connectBtn.addEventListener("click", async () => {
-    if (!modelSelect.value) {
-        alert(t("selectModelFirst"));
-        return;
-    }
+    if (!modelSelect.value) { alert(t("selectModelFirst")); return; }
     connectBtn.disabled = true;
     log("$ connecting...", "prompt");
 
@@ -72,6 +78,7 @@ connectBtn.addEventListener("click", async () => {
         deviceInfo.hidden = false;
         disconnectBtn.hidden = false;
         connectBtn.hidden = true;
+        setConnected(info.model);
         log(`${t("connected")}: ${info.model}`, "ok");
         appsManagerCard.hidden = false;
         loadApps();
@@ -89,6 +96,7 @@ disconnectBtn.addEventListener("click", async () => {
     connectBtn.hidden = false;
     connectBtn.disabled = !modelSelect.value;
     appsManagerCard.hidden = true;
+    setDisconnected();
     log(t("disconnected"));
 });
 
@@ -100,14 +108,11 @@ apkInput.addEventListener("change", (e) => {
         if (f.name.toLowerCase().endsWith(".apk")) selectedFiles.push(f);
     }
     renderApkList();
+    apkInput.value = "";
 });
 
-dropZone.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dropZone.classList.add("drag");
-});
-
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag"));
+dropZone.addEventListener("dragover",  (e) => { e.preventDefault(); dropZone.classList.add("drag"); });
+dropZone.addEventListener("dragleave", ()  => dropZone.classList.remove("drag"));
 
 dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
@@ -121,13 +126,14 @@ dropZone.addEventListener("drop", (e) => {
 function renderApkList() {
     apkList.innerHTML = "";
     selectedFiles.forEach((f, i) => {
-        const li = document.createElement("li");
+        const li   = document.createElement("li");
         const span = document.createElement("span");
-        span.textContent = `${f.name} - ${(f.size / 1024 / 1024).toFixed(1)} MB`;
+        span.textContent = `${f.name}  —  ${(f.size / 1024 / 1024).toFixed(1)} MB`;
         const rm = document.createElement("button");
-        rm.textContent = "x";
+        rm.textContent = "✕";
         rm.className = "apk-remove";
-        rm.addEventListener("click", () => {
+        rm.addEventListener("click", (e) => {
+            e.stopPropagation();
             selectedFiles.splice(i, 1);
             renderApkList();
         });
@@ -145,152 +151,136 @@ installBtn.addEventListener("click", async () => {
 
     let ok = 0, fail = 0;
     for (const file of selectedFiles) {
-        log(`--- ${file.name} ---`);
+        log(`─── ${file.name} ───`);
         try {
-            const bytes = new Uint8Array(await file.arrayBuffer());
+            const bytes  = new Uint8Array(await file.arrayBuffer());
             const result = await installer.installApk(bytes, file.name);
-            if (result.ok) {
-                ok++;
-                log(`OK: ${file.name}`, "ok");
-            } else {
-                fail++;
-                log(`FAIL: ${file.name} - ${result.error}`, "err");
-            }
+            if (result.ok) { ok++;   log(`✓ ${file.name}`, "ok"); }
+            else           { fail++; log(`✗ ${file.name} — ${result.error}`, "err"); }
         } catch (err) {
             fail++;
-            log(`FAIL: ${file.name} - ${err.message}`, "err");
+            log(`✗ ${file.name} — ${err.message}`, "err");
         }
     }
 
-    log(`=== ${ok} OK, ${fail} FAIL ===`, fail === 0 ? "ok" : "warn");
+    log(`═══ ${ok} ناجح، ${fail} فاشل ═══`, fail === 0 ? "ok" : "warn");
     selectedFiles = [];
     renderApkList();
     installBtn.disabled = false;
 });
 
-// ==================== إدارة التطبيقات ====================
+// ================================================================
+//  إدارة التطبيقات
+// ================================================================
 
-async function loadApps(force = false) {
+async function loadApps() {
     if (!installer) return;
-    appsList.innerHTML = `<p class="empty-msg">Loading...</p>`;
+    appsList.innerHTML = `<p class="empty-state">جارٍ التحميل...</p>`;
     try {
         const [userApps, systemApps] = await Promise.all([
             installer.listApps('user'),
             installer.listApps('system'),
         ]);
-        appsCache.user = userApps;
+        appsCache.user   = userApps;
         appsCache.system = systemApps;
-        userAppsCount.textContent = userApps.length;
+        userAppsCount.textContent   = userApps.length;
         systemAppsCount.textContent = systemApps.length;
         renderApps();
     } catch (e) {
-        appsList.innerHTML = `<p class="empty-msg">Error: ${e.message}</p>`;
+        appsList.innerHTML = `<p class="empty-state">خطأ: ${e.message}</p>`;
     }
 }
 
 function renderApps() {
     const apps = appsCache[currentTab] || [];
     if (apps.length === 0) {
-        appsList.innerHTML = `<p class="empty-msg">No apps</p>`;
+        appsList.innerHTML = `<p class="empty-state">${t("noApps")}</p>`;
         return;
     }
 
     appsList.innerHTML = "";
     for (const app of apps) {
+        const shortName = app.package.split('.').pop();
+        const initials  = shortName.slice(0, 3).toUpperCase();
+
         const div = document.createElement("div");
         div.className = "app-item";
 
+        // header (icon + info)
         const header = document.createElement("div");
         header.className = "app-header";
 
         const icon = document.createElement("div");
         icon.className = "app-icon";
-        icon.textContent = currentTab === 'system' ? 'SYS' : 'APP';
+        icon.textContent = initials;
 
         const info = document.createElement("div");
         info.className = "app-info";
 
         const name = document.createElement("div");
         name.className = "app-name";
-        name.textContent = app.package.split('.').pop();
+        name.textContent = shortName;
 
         const pkg = document.createElement("div");
         pkg.className = "app-pkg";
         pkg.textContent = app.package;
 
-        info.appendChild(name);
-        info.appendChild(pkg);
-        header.appendChild(icon);
-        header.appendChild(info);
+        info.append(name, pkg);
+        header.append(icon, info);
 
+        // actions
         const actions = document.createElement("div");
         actions.className = "app-actions";
 
-        const grantBtn = document.createElement("button");
-        grantBtn.className = "action-btn btn-grant";
-        grantBtn.textContent = "Grant";
-        grantBtn.onclick = async () => {
+        const makeBtn = (cls, label, handler) => {
+            const b = document.createElement("button");
+            b.className = `action-btn ${cls}`;
+            b.textContent = label;
+            b.onclick = handler;
+            return b;
+        };
+
+        const grantBtn = makeBtn("btn-grant", t("grant"), async () => {
             grantBtn.disabled = true;
+            grantBtn.textContent = "...";
             await installer.grantPermissions(app.package);
             await installer.verifyGrants(app.package, []);
-            grantBtn.textContent = "Done";
-            setTimeout(() => {
-                grantBtn.textContent = "Grant";
-                grantBtn.disabled = false;
-            }, 2000);
-        };
+            grantBtn.textContent = "✓";
+            setTimeout(() => { grantBtn.textContent = t("grant"); grantBtn.disabled = false; }, 2000);
+        });
 
-        const launchBtn = document.createElement("button");
-        launchBtn.className = "action-btn btn-launch";
-        launchBtn.textContent = "Launch";
-        launchBtn.onclick = async () => {
+        const launchBtn = makeBtn("btn-launch", t("launch"), async () => {
             launchBtn.disabled = true;
             await installer.launchApp(app.package);
-            setTimeout(() => { launchBtn.disabled = false; }, 1000);
-        };
+            setTimeout(() => { launchBtn.disabled = false; }, 1200);
+        });
 
-        const exportBtn = document.createElement("button");
-        exportBtn.className = "action-btn btn-export";
-        exportBtn.textContent = "Export";
-        exportBtn.onclick = async () => {
+        const exportBtn = makeBtn("btn-export", t("export"), async () => {
             exportBtn.disabled = true;
-            const result = await installer.exportApk(app.package);
-            exportBtn.textContent = result.ok ? "Done" : "Fail";
-            setTimeout(() => {
-                exportBtn.textContent = "Export";
-                exportBtn.disabled = false;
-            }, 2000);
-        };
+            const res = await installer.exportApk(app.package);
+            exportBtn.textContent = res.ok ? "✓" : "✗";
+            setTimeout(() => { exportBtn.textContent = t("export"); exportBtn.disabled = false; }, 2000);
+        });
 
-        const uninstallBtn = document.createElement("button");
-        uninstallBtn.className = "action-btn btn-uninstall";
-        uninstallBtn.textContent = "Uninstall";
-        uninstallBtn.onclick = async () => {
-            if (!confirm("Uninstall " + app.package + "?")) return;
+        const uninstallBtn = makeBtn("btn-uninstall", t("uninstall"), async () => {
+            if (!confirm(`${t("confirmUninstall")}\n\n${app.package}`)) return;
+            if (currentTab === 'system' && !confirm(t("systemAppWarning"))) return;
             uninstallBtn.disabled = true;
-            const result = await installer.uninstallApp(app.package);
-            if (result.ok) {
+            const res = await installer.uninstallApp(app.package);
+            if (res.ok) {
                 const idx = appsCache[currentTab].findIndex(a => a.package === app.package);
                 if (idx !== -1) appsCache[currentTab].splice(idx, 1);
                 renderApps();
-                if (currentTab === 'user') userAppsCount.textContent = appsCache.user.length;
-                else systemAppsCount.textContent = appsCache.system.length;
+                if (currentTab === 'user')   userAppsCount.textContent   = appsCache.user.length;
+                else                          systemAppsCount.textContent = appsCache.system.length;
             } else {
-                uninstallBtn.textContent = "Fail";
-                setTimeout(() => {
-                    uninstallBtn.textContent = "Uninstall";
-                    uninstallBtn.disabled = false;
-                }, 2000);
+                uninstallBtn.textContent = "✗";
+                setTimeout(() => { uninstallBtn.textContent = t("uninstall"); uninstallBtn.disabled = false; }, 2000);
             }
-        };
+        });
 
-        actions.appendChild(grantBtn);
-        actions.appendChild(launchBtn);
-        actions.appendChild(exportBtn);
-        actions.appendChild(uninstallBtn);
-
-        div.appendChild(header);
-        div.appendChild(actions);
+        actions.append(grantBtn, launchBtn, exportBtn, uninstallBtn);
+        div.append(header, actions);
         appsList.appendChild(div);
     }
 }
@@ -309,4 +299,4 @@ tabSystem.addEventListener("click", () => {
     renderApps();
 });
 
-refreshAppsBtn.addEventListener("click", () => loadApps(true));
+refreshAppsBtn.addEventListener("click", () => loadApps());
