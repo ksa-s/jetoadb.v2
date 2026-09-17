@@ -68,6 +68,9 @@ export class AdbInstaller {
         this.shellPassword = options.shellPassword || null;
         this.autoSign = options.autoSign || false;
         this.deviceOwnerReceiver = options.deviceOwnerReceiver || null;
+        // وضع تجاوز القيود: يتخطى pm install مباشرة ويذهب للـ Helper JAR
+        // مناسب للأنظمة الجديدة التي تمنع pm install
+        this.restrictedMode = options.restrictedMode || false;
     }
 
     // ==================== إدارة التطبيقات ====================
@@ -567,38 +570,13 @@ export class AdbInstaller {
             return { ok: false, pkg: null, error: `Push failed: ${outputText}`, usedHelper: false };
         }
 
-        // ===== طريقة 1: pm install -r -g =====
-        this.log(`> pm install -r -g "${usedPath}"`, "prompt");
-        outputText = await this.runShell([`pm install -r -g "${usedPath}"`], 120000);
-        installed = /\bSuccess\b/i.test(outputText);
-
-        // ===== طريقة 2: pm install -r -g -t (يسمح بـ debug APKs) =====
-        if (!installed) {
-            this.log(`> pm install -r -g -t "${usedPath}"`, "prompt");
-            outputText = await this.runShell([`pm install -r -g -t "${usedPath}"`], 120000);
-            installed = /\bSuccess\b/i.test(outputText);
-        }
-
-        // ===== طريقة 3: pm install --user 0 (تثبيت صريح للمستخدم الأساسي) =====
-        if (!installed) {
-            this.log(`> pm install -r -g --user 0 "${usedPath}"`, "prompt");
-            outputText = await this.runShell([`pm install -r -g --user 0 "${usedPath}"`], 120000);
-            installed = /\bSuccess\b/i.test(outputText);
-        }
-
-        // ===== طريقة 4: تثبيت عبر الـ stdin (stream install) =====
-        // ملاحظة: بعض الأجهزة (DesaySV) لا تقبل الـ - في النهاية → نجرب بدونها أولاً
-        if (!installed && !PERMANENT_RE.test(outputText)) {
-            this.log(`> cat | pm install -S ${apkBytes.length}`, "prompt");
-            outputText = await this.runShell(
-                [`cat "${usedPath}" | pm install -r -g -t -S ${apkBytes.length}`],
-                120000
-            );
-            installed = /\bSuccess\b/i.test(outputText);
-        }
-
-        // ===== طريقة 5: Helper JAR عبر app_process =====
-        if (!installed && !isDirProblem(outputText)) {
+        if (this.restrictedMode) {
+            // ================================================================
+            //  وضع تجاوز القيود (نظام جديد محدود — Jetour T2 v2 وما شابهه)
+            //  يتخطى pm install كلياً ويذهب للـ Helper JAR مباشرة
+            //  الـ Helper يستخدم PackageInstaller API الداخلي بدلاً من pm shell
+            // ================================================================
+            this.log(`🔒 وضع تجاوز القيود — تخطي pm install`, "warn");
             this.log(t("helperInstalling"), "warn");
             try {
                 helperResult = await this.installViaHelper(usedPath);
@@ -610,6 +588,57 @@ export class AdbInstaller {
                 this.log(t("helperSuccess") + `: ${helperResult.pkg}`, "ok");
             } else {
                 this.log(this.helperErrorText(helperResult), "err");
+            }
+
+        } else {
+            // ================================================================
+            //  الوضع العادي (نظام قديم أو غير محدود)
+            //  يجرب pm install أولاً ثم يتراجع للـ Helper عند الفشل
+            // ================================================================
+
+            // ===== طريقة 1: pm install -r -g =====
+            this.log(`> pm install -r -g "${usedPath}"`, "prompt");
+            outputText = await this.runShell([`pm install -r -g "${usedPath}"`], 120000);
+            installed = /\bSuccess\b/i.test(outputText);
+
+            // ===== طريقة 2: pm install -r -g -t (يسمح بـ debug APKs) =====
+            if (!installed && !PERMANENT_RE.test(outputText)) {
+                this.log(`> pm install -r -g -t "${usedPath}"`, "prompt");
+                outputText = await this.runShell([`pm install -r -g -t "${usedPath}"`], 120000);
+                installed = /\bSuccess\b/i.test(outputText);
+            }
+
+            // ===== طريقة 3: pm install --user 0 =====
+            if (!installed && !PERMANENT_RE.test(outputText)) {
+                this.log(`> pm install -r -g --user 0 "${usedPath}"`, "prompt");
+                outputText = await this.runShell([`pm install -r -g --user 0 "${usedPath}"`], 120000);
+                installed = /\bSuccess\b/i.test(outputText);
+            }
+
+            // ===== طريقة 4: stream install عبر cat =====
+            if (!installed && !PERMANENT_RE.test(outputText)) {
+                this.log(`> cat | pm install -S ${apkBytes.length}`, "prompt");
+                outputText = await this.runShell(
+                    [`cat "${usedPath}" | pm install -r -g -t -S ${apkBytes.length}`],
+                    120000
+                );
+                installed = /\bSuccess\b/i.test(outputText);
+            }
+
+            // ===== طريقة 5: Helper JAR (fallback) =====
+            if (!installed && !isDirProblem(outputText)) {
+                this.log(t("helperInstalling"), "warn");
+                try {
+                    helperResult = await this.installViaHelper(usedPath);
+                } catch (e) {
+                    helperResult = { ok: false, code: "EXCEPTION", text: e.message, started: false };
+                }
+                if (helperResult.ok) {
+                    installed = true;
+                    this.log(t("helperSuccess") + `: ${helperResult.pkg}`, "ok");
+                } else {
+                    this.log(this.helperErrorText(helperResult), "err");
+                }
             }
         }
 
