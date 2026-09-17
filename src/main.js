@@ -26,6 +26,20 @@ const systemAppsCount= document.getElementById("systemAppsCount");
 const statusPill     = document.getElementById("statusPill");
 const statusLabel    = document.getElementById("statusLabel");
 
+// ---------- إعدادات الموديلات ----------
+// restricted: true = نظام محدود → يتخطى pm install ويستخدم Helper JAR مباشرة
+// restricted: false = نظام عادي → يجرب pm install أولاً
+const MODEL_CONFIG = {
+    'jetour-t2-old':    { restricted: false, hint: '✓ نظام قديم — التثبيت المباشر مدعوم' },
+    'jetour-t2-new':    { restricted: true,  hint: '🔒 نظام جديد — سيتم استخدام المثبت الاحتياطي تلقائياً' },
+    'jetour-x70-old':   { restricted: false, hint: '✓ نظام قديم — التثبيت المباشر مدعوم' },
+    'jetour-x70-new':   { restricted: true,  hint: '🔒 نظام جديد — سيتم استخدام المثبت الاحتياطي تلقائياً' },
+    'changan-cs55':     { restricted: false, hint: '' },
+    'haval-h6':         { restricted: false, hint: '' },
+    'geely-coolray':    { restricted: false, hint: '' },
+    'other':            { restricted: false, hint: '' },
+};
+
 // ---------- الحالة ----------
 let installer = null;
 let selectedFiles = [];
@@ -61,7 +75,12 @@ function setDisconnected() {
 // ---------- اختيار الموديل ----------
 modelSelect.addEventListener("change", () => {
     const m = modelSelect.value;
-    modelHint.textContent = "";
+    const cfg = MODEL_CONFIG[m];
+    // عرض hint يشرح الوضع المحدد
+    modelHint.textContent = cfg?.hint || "";
+    modelHint.className = cfg?.restricted
+        ? "field-hint hint-restricted"
+        : "field-hint hint-normal";
     connectBtn.disabled = !m;
 });
 
@@ -72,7 +91,14 @@ connectBtn.addEventListener("click", async () => {
     log("$ connecting...", "prompt");
 
     try {
-        installer = new AdbInstaller(log, { installMode: 'pm-shell' });
+        const cfg = MODEL_CONFIG[modelSelect.value] || { restricted: false };
+        installer = new AdbInstaller(log, {
+            installMode: 'pm-shell',
+            restrictedMode: cfg.restricted,
+        });
+        if (cfg.restricted) {
+            log(`🔒 وضع تجاوز القيود مُفعَّل — سيتم تخطي pm install`, "warn");
+        }
         const info = await installer.connect();
         deviceModelText.textContent = info.model;
         deviceInfo.hidden = false;
