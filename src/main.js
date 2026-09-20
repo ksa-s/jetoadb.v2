@@ -25,6 +25,12 @@ const systemAppsCount= document.getElementById("systemAppsCount");
 // جديد: status pill
 const statusPill     = document.getElementById("statusPill");
 const statusLabel    = document.getElementById("statusLabel");
+// Car settings
+const carSettingsCard  = document.getElementById("carSettingsCard");
+const enableSplitBtn   = document.getElementById("enableSplitBtn");
+const detectKeysBtn    = document.getElementById("detectKeysBtn");
+const detectBtnLabel   = document.getElementById("detectBtnLabel");
+const keysResult       = document.getElementById("keysResult");
 
 // ---------- إعدادات الموديلات ----------
 // restricted: true = نظام محدود → يتخطى pm install ويستخدم Helper JAR مباشرة
@@ -107,6 +113,7 @@ connectBtn.addEventListener("click", async () => {
         setConnected(info.model);
         log(`${t("connected")}: ${info.model}`, "ok");
         appsManagerCard.hidden = false;
+        carSettingsCard.hidden = false;
         loadApps();
     } catch (err) {
         log(`Error: ${err.message}`, "err");
@@ -122,6 +129,7 @@ disconnectBtn.addEventListener("click", async () => {
     connectBtn.hidden = false;
     connectBtn.disabled = !modelSelect.value;
     appsManagerCard.hidden = true;
+    carSettingsCard.hidden = true;
     setDisconnected();
     log(t("disconnected"));
 });
@@ -281,6 +289,22 @@ function renderApps() {
             setTimeout(() => { launchBtn.disabled = false; }, 1200);
         });
 
+        const freeformBtn = makeBtn("btn-freeform", "عائم 📺", async () => {
+            freeformBtn.disabled = true;
+            freeformBtn.textContent = "...";
+            const res = await installer.launchFreeform(app.package);
+            freeformBtn.textContent = res.ok ? "✓" : "✗";
+            setTimeout(() => { freeformBtn.textContent = "عائم 📺"; freeformBtn.disabled = false; }, 2000);
+        });
+
+        const showBtn = makeBtn("btn-show", "ظهور 📱", async () => {
+            showBtn.disabled = true;
+            showBtn.textContent = "...";
+            const res = await installer.showInLauncher(app.package);
+            showBtn.textContent = res.ok ? "✓" : "✗";
+            setTimeout(() => { showBtn.textContent = "ظهور 📱"; showBtn.disabled = false; }, 2000);
+        });
+
         const exportBtn = makeBtn("btn-export", t("export"), async () => {
             exportBtn.disabled = true;
             const res = await installer.exportApk(app.package);
@@ -305,7 +329,7 @@ function renderApps() {
             }
         });
 
-        actions.append(grantBtn, launchBtn, exportBtn, uninstallBtn);
+        actions.append(grantBtn, launchBtn, freeformBtn, showBtn, exportBtn, uninstallBtn);
         div.append(header, actions);
         appsList.appendChild(div);
     }
@@ -326,3 +350,89 @@ tabSystem.addEventListener("click", () => {
 });
 
 refreshAppsBtn.addEventListener("click", () => loadApps());
+
+// ================================================================
+//  إعدادات السيارة — تقسيم الشاشة + الدركسون
+// ================================================================
+
+// تفعيل تقسيم الشاشة
+enableSplitBtn.addEventListener("click", async () => {
+    if (!installer) return;
+    enableSplitBtn.disabled = true;
+    enableSplitBtn.textContent = "جارٍ التفعيل...";
+
+    const res = await installer.enableSplitScreen();
+
+    enableSplitBtn.textContent = res.ok
+        ? "✓ تم التفعيل — أعد التشغيل"
+        : "✗ فشل التفعيل";
+    enableSplitBtn.style.color = res.ok ? "var(--green)" : "var(--red)";
+
+    setTimeout(() => {
+        enableSplitBtn.textContent = "تفعيل تقسيم الشاشة";
+        enableSplitBtn.style.color = "";
+        enableSplitBtn.disabled = false;
+    }, 4000);
+});
+
+// كشف أزرار الدركسون
+let detectingKeys = false;
+detectKeysBtn.addEventListener("click", async () => {
+    if (!installer || detectingKeys) return;
+
+    detectingKeys = true;
+    detectKeysBtn.disabled = true;
+    keysResult.hidden = true;
+    keysResult.innerHTML = "";
+
+    // عداد تنازلي
+    const duration = 8;
+    let remaining = duration;
+    detectBtnLabel.textContent = `⏱ جارٍ الكشف... ${remaining}ث — اضغط أزرار الدركسون الآن`;
+    const timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+            detectBtnLabel.textContent = `⏱ جارٍ الكشف... ${remaining}ث — اضغط أزرار الدركسون الآن`;
+        } else {
+            clearInterval(timer);
+        }
+    }, 1000);
+
+    const res = await installer.detectSteeringKeys(duration);
+    clearInterval(timer);
+
+    detectBtnLabel.textContent = "🔍 كشف أزرار الدركسون (8 ثوانٍ)";
+    detectKeysBtn.disabled = false;
+    detectingKeys = false;
+
+    // عرض النتائج
+    keysResult.hidden = false;
+    if (res.detected.length === 0) {
+        keysResult.innerHTML = `<p class="keys-empty">لم يُكتشف أي زر — تأكد من توصيل الدركسون وحاول مجدداً</p>`;
+        return;
+    }
+
+    const statusMsg = res.hasStandard
+        ? `<p class="keys-status ok">✓ أزرار قياسية — ستعمل تلقائياً مع تطبيقات الموسيقى</p>`
+        : `<p class="keys-status warn">⚠ أكواد مخصصة — تحتاج إعادة تعيين (root)</p>`;
+
+    const list = res.detected.map(k => `
+        <div class="key-item ${k.standard ? 'standard' : 'custom'}">
+            <span class="key-label">${k.label}</span>
+            <code class="key-code">${k.code}</code>
+        </div>
+    `).join('');
+
+    keysResult.innerHTML = statusMsg + `<div class="keys-list">${list}</div>`;
+});
+
+// أزرار الوسائط اليدوية
+document.querySelectorAll(".media-key").forEach(btn => {
+    btn.addEventListener("click", async () => {
+        if (!installer) return;
+        const keycode = btn.getAttribute("data-key");
+        btn.classList.add("pressed");
+        await installer.sendMediaKey(keycode);
+        setTimeout(() => btn.classList.remove("pressed"), 300);
+    });
+});
