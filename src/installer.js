@@ -688,6 +688,213 @@ export class AdbInstaller {
         } catch (e) {}
         return null;
     }
+
+    // =====================================================================
+    //  إعدادات السيارة — تقسيم الشاشة + الدركسون
+    // =====================================================================
+
+    /**
+     * تفعيل دعم النوافذ العائمة وتقسيم الشاشة
+     */
+    async enableSplitScreen() {
+        if (!this.adb) return { ok: false, error: "No ADB" };
+        this.log("📺 تفعيل دعم تقسيم الشاشة...", "warn");
+
+        const settings = [
+            ['enable_freeform_support',            '1'],
+            ['force_resizable_activities',          '1'],
+            ['enable_non_resizable_multi_window',   '1'],
+            ['force_allow_on_external',             '1'],
+        ];
+
+        let ok = 0;
+        for (const [key, val] of settings) {
+            try {
+                const out = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                    `settings put global ${key} ${val} 2>&1`
+                );
+                const good = !out || !/error|exception/i.test(out);
+                if (good) { ok++; this.log(`  ✓ ${key} = ${val}`, "ok"); }
+                else       { this.log(`  ⚠ ${key}: ${out.trim().slice(0,60)}`, "warn"); }
+            } catch (e) {
+                this.log(`  ⚠ ${key}: ${e.message}`, "warn");
+            }
+        }
+
+        // تحقق من الإصدار — بعض الأجهزة تحتاج إعادة تشغيل
+        const sdk = (await this.adb.subprocess.noneProtocol.spawnWaitText(
+            'getprop ro.build.version.sdk'
+        ).catch(() => '0')).trim();
+
+        const msg = ok > 0
+            ? `✓ تم التفعيل (Android SDK ${sdk}) — أعد تشغيل الشاشة لتطبيق التغييرات`
+            : '✗ فشل التفعيل — قد يحتاج صلاحيات أعلى';
+
+        this.log(msg, ok > 0 ? "ok" : "err");
+        return { ok: ok > 0, sdk, msg };
+    }
+
+    /**
+     * تشغيل تطبيق في نافذة عائمة (freeform)
+     * windowingMode: 1=fullscreen, 3=split, 5=freeform
+     */
+    async launchFreeform(pkg, mode = 5) {
+        if (!this.adb) return { ok: false, error: "No ADB" };
+
+        // البحث عن النشاط الرئيسي
+        let component = "";
+        try {
+            const r1 = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `cmd package resolve-activity --brief ${pkg} 2>/dev/null | tail -1`
+            );
+            if (r1 && !r1.includes("No activity") && r1.includes("/")) {
+                component = r1.trim();
+            }
+        } catch (e) {}
+
+        // fallback: استخراج من dumpsys
+        if (!component) {
+            try {
+                const r2 = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                    `dumpsys package ${pkg} 2>/dev/null | grep -A1 "android.intent.action.MAIN" | grep "${pkg}" | head -1`
+                );
+                const m = r2 && r2.match(/([\w.]+\/[\w.$]+)/);
+                if (m) component = m[1];
+            } catch (e) {}
+        }
+
+        const modeLabel = mode === 3 ? 'split-screen' : 'freeform';
+        if (!component) {
+            this.log(`⚠ ${pkg}: لم نجد النشاط الرئيسي، تشغيل عادي`, "warn");
+            return await this.launchApp(pkg);
+        }
+
+        const out = await this.runShell(
+            [`am start -n ${component} --windowingMode ${mode} 2>&1`],
+            15000
+        );
+        const isOk = !/error|exception/i.test(out);
+        this.log(
+            isOk ? `📺 ${pkg}: ${modeLabel} ✓` : `✗ ${pkg}: ${out.trim().slice(0, 80)}`,
+            isOk ? "ok" : "err"
+        );
+        return { ok: isOk, component, error: isOk ? null : out.trim() };
+    }
+
+    /**
+     * كشف الأزرار التي يرسلها دركسون السيارة
+     * المستخدم يضغط الأزرار أثناء مدة الكشف
+     */
+    async detectSteeringKeys(durationSec = 8) {
+        if (!this.adb) return { detected: [], raw: "" };
+        this.log(`🎛️ كشف أزرار الدركسون لمدة ${durationSec} ثوانٍ — اضغط الأزرار الآن...`, "warn");
+
+        // تشغيل getevent في الخلفية
+        let raw = "";
+        try {
+            raw = await Promise.race([
+                this.adb.subprocess.noneProtocol.spawnWaitText(
+                    `timeout ${durationSec} getevent -l 2>/dev/null`
+                ),
+                new Promise(r => setTimeout(() => r(""), (durationSec + 2) * 1000))
+            ]);
+        } catch (e) {
+            raw = "";
+        }
+
+        // خريطة الأكواد الشائعة للسيارات الصينية
+        const KNOWN_KEYS = {
+            'KEY_NEXTSONG':    { label: '⏭ الأغنية التالية',    standard: true  },
+            'KEY_PREVIOUSSONG':{ label: '⏮ الأغنية السابقة',    standard: true  },
+            'KEY_PLAYPAUSE':   { label: '⏯ تشغيل / إيقاف',      standard: true  },
+            'KEY_PLAY':        { label: '▶ تشغيل',               standard: true  },
+            'KEY_PAUSE':       { label: '⏸ إيقاف مؤقت',          standard: true  },
+            'KEY_STOP':        { label: '⏹ إيقاف كلي',            standard: true  },
+            'KEY_VOLUMEUP':    { label: '🔊 رفع الصوت',           standard: true  },
+            'KEY_VOLUMEDOWN':  { label: '🔉 خفض الصوت',           standard: true  },
+            'KEY_MUTE':        { label: '🔇 كتم الصوت',           standard: true  },
+            'KEY_PHONE':       { label: '📞 زر الهاتف',           standard: true  },
+            'KEY_BACK':        { label: '↩ رجوع',                standard: true  },
+            'KEY_HOME':        { label: '🏠 الرئيسية',            standard: true  },
+            'KEY_MEDIA':       { label: '🎵 وسائط',               standard: true  },
+            'KEY_MODE':        { label: '🔀 الوضع',               standard: false },
+            'KEY_SCROLLUP':    { label: '🖱 تمرير لأعلى',         standard: false },
+            'KEY_SCROLLDOWN':  { label: '🖱 تمرير لأسفل',         standard: false },
+        };
+
+        // نُحلّل فقط أحداث KEY_DOWN (0x0001 + value=1)
+        const detected = new Map();
+        for (const line of raw.split('\n')) {
+            if (!line.includes('EV_KEY') && !line.match(/KEY_|BTN_/)) continue;
+            // تجاهل KEY_UP
+            if (line.includes(' 0000 0000') || line.endsWith(' 0')) continue;
+
+            for (const [code, info] of Object.entries(KNOWN_KEYS)) {
+                if (line.includes(code)) {
+                    detected.set(code, { ...info, code });
+                }
+            }
+            // أكواد غير معروفة
+            const m = line.match(/(KEY_\w+|BTN_\w+)/);
+            if (m && !KNOWN_KEYS[m[1]] && !detected.has(m[1])) {
+                detected.set(m[1], { code: m[1], label: `❓ ${m[1]}`, standard: false });
+            }
+        }
+
+        const arr = [...detected.values()];
+        const hasStandard = arr.some(k => k.standard);
+
+        if (arr.length === 0) {
+            this.log("⚠ لم يُكتشف أي زر — تحقق من توصيل الدركسون أو جرب مرة أخرى", "warn");
+        } else {
+            this.log(`✓ اكتُشف ${arr.length} زر — ${hasStandard
+                ? 'أزرار قياسية: ستعمل تلقائياً مع مشغلات الموسيقى 🎵'
+                : 'أكواد مخصصة: قد تحتاج إعادة تعيين'}`, "ok");
+            arr.forEach(k => this.log(`  • ${k.code} → ${k.label}`, k.standard ? "ok" : "warn"));
+        }
+
+        return { detected: arr, hasStandard, raw };
+    }
+
+    /**
+     * إرسال أمر وسائط للتطبيق النشط
+     */
+    async sendMediaKey(keycode) {
+        if (!this.adb) return;
+        await this.adb.subprocess.noneProtocol.spawnWaitText(
+            `input keyevent ${keycode} 2>&1`
+        );
+    }
+
+    /**
+     * جعل تطبيق يظهر في قائمة التطبيقات (launcher)
+     */
+    async showInLauncher(pkg) {
+        if (!this.adb) return { ok: false };
+        try {
+            // تفعيل التطبيق بالكامل
+            await this.adb.subprocess.noneProtocol.spawnWaitText(`pm enable ${pkg} 2>&1`);
+
+            // محاولة تفعيل نشاط الـ launcher إذا كان مُعطَّلاً
+            const components = await this.adb.subprocess.noneProtocol.spawnWaitText(
+                `pm dump ${pkg} 2>/dev/null | grep -E "android.intent.action.MAIN|LAUNCHER" -A1 | grep "${pkg}" | head -3`
+            );
+            for (const line of components.split('\n')) {
+                const m = line.match(/([\w.]+\/[\w.$]+)/);
+                if (m) {
+                    await this.adb.subprocess.noneProtocol.spawnWaitText(
+                        `pm enable ${m[1]} 2>&1`
+                    );
+                }
+            }
+
+            this.log(`✓ ${pkg}: مرئي في قائمة التطبيقات`, "ok");
+            return { ok: true };
+        } catch (e) {
+            this.log(`✗ ${pkg}: ${e.message}`, "err");
+            return { ok: false, error: e.message };
+        }
+    }
 }
 
 export { isTransient, isDirProblem };
