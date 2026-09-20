@@ -11,6 +11,7 @@
 <body>
     <div class="shell">
 
+        <!-- Topbar -->
         <header class="topbar">
             <div class="brand">
                 <div class="brand-mark">⬡</div>
@@ -30,36 +31,28 @@
 
         <main class="content">
 
-            <!-- اختيار الموديل -->
+            <!-- ① اختيار السيارة -->
             <section class="panel">
-                <span class="field-label" data-i18n="selectModel">موديل السيارة</span>
-                <div class="select-wrap">
-                    <select id="modelSelect" class="select-field">
-                        <option value="">— اختر الموديل —</option>
+                <span class="field-label" data-i18n="selectModel">اختر سيارتك</span>
 
-                        <optgroup label="Jetour T2">
-                            <option value="jetour-t2-old">Jetour T2 — نظام قديم (تثبيت مباشر)</option>
-                            <option value="jetour-t2-new">Jetour T2 — نظام جديد (محدود)</option>
-                        </optgroup>
+                <!-- hidden select للتوافق مع JS الموجود -->
+                <select id="modelSelect" hidden></select>
 
-                        <optgroup label="Jetour X70">
-                            <option value="jetour-x70-old">Jetour X70 — نظام قديم</option>
-                            <option value="jetour-x70-new">Jetour X70 — نظام جديد (محدود)</option>
-                        </optgroup>
-
-                        <optgroup label="سيارات أخرى">
-                            <option value="changan-cs55">Changan CS55 Plus</option>
-                            <option value="haval-h6">Haval H6</option>
-                            <option value="geely-coolray">Geely Coolray</option>
-                            <option value="other">أخرى (عام)</option>
-                        </optgroup>
-                    </select>
-                    <span class="select-caret">▾</span>
+                <div class="car-grid" id="carGrid">
+                    <!-- تُولَّد بواسطة main.js -->
                 </div>
-                <p id="modelHint" class="field-hint"></p>
+
+                <!-- اختيار البروتوكول — يظهر بعد اختيار السيارة -->
+                <div class="protocol-picker" id="protocolPicker" hidden>
+                    <p class="protocol-heading">إصدار نظام الشاشة</p>
+                    <div class="protocol-options" id="protoOpts">
+                        <!-- تُولَّد بواسطة main.js -->
+                    </div>
+                    <p id="modelHint" class="field-hint"></p>
+                </div>
             </section>
 
-            <!-- الاتصال -->
+            <!-- ② الاتصال -->
             <section class="panel">
                 <div id="deviceInfo" class="device-bar" hidden>
                     <span class="device-bar-label" data-i18n="deviceModel">الجهاز المتصل</span>
@@ -76,7 +69,7 @@
                 </div>
             </section>
 
-            <!-- رفع APK -->
+            <!-- ③ رفع APK -->
             <section class="panel">
                 <span class="field-label" data-i18n="uploadApk">ملفات APK</span>
                 <div id="dropZone" class="dropzone">
@@ -93,13 +86,12 @@
                 </button>
             </section>
 
-            <!-- إعدادات السيارة -->
+            <!-- ④ إعدادات السيارة -->
             <section class="panel" id="carSettingsCard" hidden>
                 <div class="section-head">
                     <span class="section-title">⚙️ إعدادات السيارة</span>
                 </div>
 
-                <!-- تقسيم الشاشة -->
                 <div class="settings-group">
                     <div class="settings-group-head">
                         <span class="settings-icon">📺</span>
@@ -109,48 +101,41 @@
                         </div>
                     </div>
                     <div class="settings-actions">
-                        <button class="btn btn-ghost settings-btn" id="enableSplitBtn">
-                            تفعيل تقسيم الشاشة
-                        </button>
-                        <p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة</p>
+                        <button class="btn btn-ghost settings-btn" id="enableSplitBtn">تفعيل تقسيم الشاشة</button>
+                        <p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة مستقلة</p>
                     </div>
                 </div>
 
                 <div class="settings-divider"></div>
 
-                <!-- الدركسون -->
                 <div class="settings-group">
                     <div class="settings-group-head">
                         <span class="settings-icon">🎛️</span>
                         <div>
                             <p class="settings-title">أزرار الدركسون</p>
-                            <p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه</p>
+                            <p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه مع التطبيقات</p>
                         </div>
                     </div>
-
-                    <!-- اختبار الاكتشاف -->
                     <div class="settings-actions">
                         <button class="btn btn-ghost settings-btn" id="detectKeysBtn">
                             <span id="detectBtnLabel">🔍 كشف أزرار الدركسون (8 ثوانٍ)</span>
                         </button>
                         <div id="keysResult" class="keys-result" hidden></div>
                     </div>
-
-                    <!-- اختبار يدوي -->
                     <p class="settings-sub-title">اختبار يدوي للأزرار</p>
                     <div class="media-keys">
-                        <button class="media-key" data-key="88" title="KEYCODE_MEDIA_PREVIOUS">⏮</button>
-                        <button class="media-key" data-key="85" title="KEYCODE_MEDIA_PLAY_PAUSE">⏯</button>
-                        <button class="media-key" data-key="87" title="KEYCODE_MEDIA_NEXT">⏭</button>
-                        <button class="media-key" data-key="24" title="KEYCODE_VOLUME_UP">🔊</button>
-                        <button class="media-key" data-key="25" title="KEYCODE_VOLUME_DOWN">🔉</button>
-                        <button class="media-key" data-key="164" title="KEYCODE_VOLUME_MUTE">🔇</button>
+                        <button class="media-key" data-key="88" title="السابق">⏮</button>
+                        <button class="media-key" data-key="85" title="تشغيل/إيقاف">⏯</button>
+                        <button class="media-key" data-key="87" title="التالي">⏭</button>
+                        <button class="media-key" data-key="24" title="رفع الصوت">🔊</button>
+                        <button class="media-key" data-key="25" title="خفض الصوت">🔉</button>
+                        <button class="media-key" data-key="164" title="كتم">🔇</button>
                     </div>
-                    <p class="settings-note">اضغط الأزرار أعلاه لإرسال أوامر الوسائط للجهاز مباشرة</p>
+                    <p class="settings-note">اضغط الأزرار لإرسال أوامر الوسائط مباشرة للجهاز</p>
                 </div>
             </section>
 
-            <!-- إدارة التطبيقات -->
+            <!-- ⑤ إدارة التطبيقات -->
             <section class="panel" id="appsManagerCard" hidden>
                 <div class="section-head">
                     <span class="section-title">📱 التطبيقات</span>
@@ -173,7 +158,7 @@
                 </div>
             </section>
 
-            <!-- سجل العمليات -->
+            <!-- ⑥ سجل العمليات -->
             <section class="panel panel-terminal">
                 <div class="section-head">
                     <span class="section-title" data-i18n="terminal">سجل العمليات</span>
@@ -183,6 +168,43 @@
             </section>
 
         </main>
+
+        <!-- Footer -->
+        <footer class="site-footer">
+            <div class="footer-card">
+                <div class="footer-card-head">
+                    <span class="footer-card-title">المجتمع والدعم</span>
+                    <span class="footer-card-sub">أسئلة، تقارير أخطاء، واقتراحات — بالعربي والإنجليزي</span>
+                </div>
+                <a href="https://t.me/sam_f4" target="_blank" rel="noopener" class="footer-tg-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+                    التواصل عبر تيليقرام
+                </a>
+                <div class="footer-btns">
+                    <a href="https://t.me/sam_f4" target="_blank" class="footer-btn">🐛 الإبلاغ عن مشكلة</a>
+                    <a href="https://t.me/sam_f4" target="_blank" class="footer-btn">💡 طلب ميزة جديدة</a>
+                </div>
+                <p class="footer-card-note">
+                    عند الإبلاغ عن مشكلة، انسخ سجل العمليات من الأعلى وأرفقه — يحوّل المشكلة من تخمين إلى حل
+                </p>
+            </div>
+
+            <p class="footer-privacy">
+                المثبت يعمل بالكامل داخل المتصفح عبر WebUSB
+                — ملفاتك وبيانات سيارتك لا تغادر جهازك أبداً
+            </p>
+
+            <div class="footer-meta">
+                <span>sam-soft</span>
+                <span class="footer-dot">·</span>
+                <a href="https://t.me/sam_f4" target="_blank" class="footer-link">@sam_f4</a>
+                <span class="footer-dot">·</span>
+                <span>engine jetoadb-v2</span>
+                <span class="footer-dot">·</span>
+                <span>WebUSB · ADB</span>
+            </div>
+        </footer>
+
     </div>
     <script type="module" src="./src/main.js"></script>
 </body>
