@@ -93,6 +93,63 @@
                 </button>
             </section>
 
+            <!-- إعدادات السيارة -->
+            <section class="panel" id="carSettingsCard" hidden>
+                <div class="section-head">
+                    <span class="section-title">⚙️ إعدادات السيارة</span>
+                </div>
+
+                <!-- تقسيم الشاشة -->
+                <div class="settings-group">
+                    <div class="settings-group-head">
+                        <span class="settings-icon">📺</span>
+                        <div>
+                            <p class="settings-title">تقسيم الشاشة والنوافذ العائمة</p>
+                            <p class="settings-desc">تفعيل تشغيل تطبيقين جنباً إلى جنب</p>
+                        </div>
+                    </div>
+                    <div class="settings-actions">
+                        <button class="btn btn-ghost settings-btn" id="enableSplitBtn">
+                            تفعيل تقسيم الشاشة
+                        </button>
+                        <p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة</p>
+                    </div>
+                </div>
+
+                <div class="settings-divider"></div>
+
+                <!-- الدركسون -->
+                <div class="settings-group">
+                    <div class="settings-group-head">
+                        <span class="settings-icon">🎛️</span>
+                        <div>
+                            <p class="settings-title">أزرار الدركسون</p>
+                            <p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه</p>
+                        </div>
+                    </div>
+
+                    <!-- اختبار الاكتشاف -->
+                    <div class="settings-actions">
+                        <button class="btn btn-ghost settings-btn" id="detectKeysBtn">
+                            <span id="detectBtnLabel">🔍 كشف أزرار الدركسون (8 ثوانٍ)</span>
+                        </button>
+                        <div id="keysResult" class="keys-result" hidden></div>
+                    </div>
+
+                    <!-- اختبار يدوي -->
+                    <p class="settings-sub-title">اختبار يدوي للأزرار</p>
+                    <div class="media-keys">
+                        <button class="media-key" data-key="88" title="KEYCODE_MEDIA_PREVIOUS">⏮</button>
+                        <button class="media-key" data-key="85" title="KEYCODE_MEDIA_PLAY_PAUSE">⏯</button>
+                        <button class="media-key" data-key="87" title="KEYCODE_MEDIA_NEXT">⏭</button>
+                        <button class="media-key" data-key="24" title="KEYCODE_VOLUME_UP">🔊</button>
+                        <button class="media-key" data-key="25" title="KEYCODE_VOLUME_DOWN">🔉</button>
+                        <button class="media-key" data-key="164" title="KEYCODE_VOLUME_MUTE">🔇</button>
+                    </div>
+                    <p class="settings-note">اضغط الأزرار أعلاه لإرسال أوامر الوسائط للجهاز مباشرة</p>
+                </div>
+            </section>
+
             <!-- إدارة التطبيقات -->
             <section class="panel" id="appsManagerCard" hidden>
                 <div class="section-head">
