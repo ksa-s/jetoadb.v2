@@ -43,7 +43,7 @@ const CARS = [
     {
         id: 'changan-cs55',
         brand: 'Changan', model: 'CS55 Plus',
-        img: null,
+        img: './cars/cs55-plus.webp',
         protocols: [
             { key: 'changan-cs55', label: 'تثبيت مباشر', desc: 'بدون قيود', restricted: false, icon: '✓' },
         ],
