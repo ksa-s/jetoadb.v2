@@ -2,15 +2,70 @@ import "./style.css";
 import { AdbInstaller } from "./installer.js";
 import { setLang, t, getLang } from "./i18n.js";
 
+// ================================================================
+//  🔐 إعدادات تسجيل الدخول — غيّرها هنا بسهولة
+// ================================================================
 const AUTH = {
-    username: "admin",       // ← غيّر هنا
-    password: "samsoft2025", // ← غيّر هنا
-    storageKey: "ss_auth_v1",
+    username: "admin",
+    password: "samsoft2025",
+    storageKey: "ss_auth_v1",     // مفتاح التخزين في localStorage
 };
 
 // ================================================================
-//  بيانات السيارات
+//  Login Logic
 // ================================================================
+const loginOverlay = document.getElementById("loginOverlay");
+const loginBtn     = document.getElementById("loginBtn");
+const loginUser    = document.getElementById("loginUser");
+const loginPass    = document.getElementById("loginPass");
+const loginErr     = document.getElementById("loginErr");
+const logoutBtn    = document.getElementById("logoutBtn");
+
+function checkAuth() {
+    return localStorage.getItem(AUTH.storageKey) === "1";
+}
+
+function showLogin()  { loginOverlay.classList.remove("hidden"); }
+function hideLogin()  { loginOverlay.classList.add("hidden"); }
+
+function doLogin() {
+    const u = loginUser.value.trim();
+    const p = loginPass.value;
+    if (u === AUTH.username && p === AUTH.password) {
+        localStorage.setItem(AUTH.storageKey, "1");
+        loginErr.hidden = true;
+        loginOverlay.classList.add("fade-out");
+        setTimeout(hideLogin, 400);
+    } else {
+        loginErr.hidden = false;
+        loginPass.value = "";
+        loginPass.focus();
+        loginOverlay.querySelector(".login-card").classList.add("shake");
+        setTimeout(() => loginOverlay.querySelector(".login-card").classList.remove("shake"), 500);
+    }
+}
+
+function doLogout() {
+    localStorage.removeItem(AUTH.storageKey);
+    // قطع الاتصال إن وُجد
+    if (installer) installer.disconnect().catch(() => {});
+    installer = null;
+    showLogin();
+    loginOverlay.classList.remove("fade-out", "hidden");
+    loginUser.value = "";
+    loginPass.value = "";
+    loginErr.hidden = true;
+}
+
+// تحقق عند التحميل
+if (checkAuth()) { hideLogin(); } else { showLogin(); }
+
+loginBtn.addEventListener("click", doLogin);
+loginPass.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+loginUser.addEventListener("keydown", e => { if (e.key === "Enter") loginPass.focus(); });
+logoutBtn.addEventListener("click", doLogout);
+
+
 const CARS = [
     {
         id: 'jetour-t2',
@@ -49,7 +104,7 @@ const CARS = [
     {
         id: 'changan-cs55',
         brand: 'Changan', model: 'CS55 Plus',
-        img: './cars/cs55-plus.webp',
+        img: null,
         protocols: [
             { key: 'changan-cs55', label: 'تثبيت مباشر', desc: 'بدون قيود', restricted: false, icon: '✓' },
         ],
@@ -57,7 +112,7 @@ const CARS = [
     {
         id: 'other',
         brand: 'أخرى', model: 'عام',
-        img: './cars/other.webp',
+        img: null,
         protocols: [
             { key: 'other', label: 'تلقائي', desc: 'يجرب المباشر ثم الاحتياطي', restricted: false, icon: '⚡' },
         ],
