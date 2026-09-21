@@ -95,109 +95,190 @@ export class AdbInstaller {
     async grantPermissions(pkg) {
         if (!this.adb) return { ok: false, error: "No ADB" };
 
-        // ─── FIX: نفصل appops عن pm grant ونتحقق من المخرجات ───
+        // ================================================================
+        //  قائمة الأذونات الشاملة — مُنظَّمة حسب الفئة
+        // ================================================================
 
-        // appops: نجرب الأمرين (appops set + cmd appops set)
-        // GET_USAGE_STATS هو الاسم الصحيح على Android 10+ (PACKAGE_USAGE_STATS قديم)
-        const appopsList = [
+        // --- 1. AppOps (يُمنح عبر appops set، بغض النظر عن الـ manifest) ---
+        const APPOPS = [
             'SYSTEM_ALERT_WINDOW',
             'REQUEST_INSTALL_PACKAGES',
             'MANAGE_EXTERNAL_STORAGE',
             'WRITE_SETTINGS',
-            'GET_USAGE_STATS',       // الاسم الصحيح على Android 10+
-            'PACKAGE_USAGE_STATS',   // fallback للأجهزة القديمة
+            'WRITE_SECURE_SETTINGS',
+            'GET_USAGE_STATS',
+            'PACKAGE_USAGE_STATS',       // اسم بديل في الأجهزة القديمة
+            'BIND_ACCESSIBILITY_SERVICE',
         ];
 
-        // أذونات خطرة dangerous permissions (يجب أن تكون مُعلَنة في manifest)
-        const dangerousPerms = [
+        // --- 2. أذونات خطرة Dangerous (pm grant) ---
+        const DANGEROUS = [
+            // تخزين
             'android.permission.READ_EXTERNAL_STORAGE',
             'android.permission.WRITE_EXTERNAL_STORAGE',
+            // موقع جغرافي
             'android.permission.ACCESS_FINE_LOCATION',
             'android.permission.ACCESS_COARSE_LOCATION',
+            'android.permission.ACCESS_BACKGROUND_LOCATION',
+            // هاتف واتصالات
             'android.permission.READ_PHONE_STATE',
-            'android.permission.RECORD_AUDIO',
-            'android.permission.CAMERA',
             'android.permission.CALL_PHONE',
             'android.permission.SEND_SMS',
             'android.permission.RECEIVE_SMS',
+            // صوت وكاميرا
+            'android.permission.RECORD_AUDIO',
+            'android.permission.CAMERA',
+            // بلوتوث Android 12+
+            'android.permission.BLUETOOTH_SCAN',
+            'android.permission.BLUETOOTH_CONNECT',
+            'android.permission.BLUETOOTH_ADVERTISE',
+            // إشعارات Android 13+
+            'android.permission.POST_NOTIFICATIONS',
+            // قاموس
+            'android.permission.READ_USER_DICTIONARY',
+            'android.permission.WRITE_USER_DICTIONARY',
+        ];
+
+        // --- 3. أذونات عادية Normal (تُمنح تلقائياً، pm grant لا يضر) ---
+        const NORMAL = [
+            // شبكة
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_NETWORK_STATE',
+            'android.permission.CHANGE_NETWORK_STATE',
+            'android.permission.ACCESS_WIFI_STATE',
+            'android.permission.CHANGE_WIFI_STATE',
+            'android.permission.CHANGE_WIFI_MULTICAST_STATE',
+            'android.permission.NFC',
+            // بلوتوث قديم
+            'android.permission.BLUETOOTH',
+            'android.permission.BLUETOOTH_ADMIN',
+            // عتاد
+            'android.permission.TRANSMIT_IR',
+            'android.permission.FLASHLIGHT',
+            'android.permission.VIBRATE',
+            // نظام وخلفية
+            'android.permission.WAKE_LOCK',
+            'android.permission.DISABLE_KEYGUARD',
+            'android.permission.RECEIVE_BOOT_COMPLETED',
+            'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+            'android.permission.KILL_BACKGROUND_PROCESSES',
+            'android.permission.GET_TASKS',
+            'android.permission.REORDER_TASKS',
+            'android.permission.GET_PACKAGE_SIZE',
+            'android.permission.FOREGROUND_SERVICE',
+            'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+            'android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE',
+            // صوت ووسائط
+            'android.permission.MODIFY_AUDIO_SETTINGS',
+            // مزامنة وحسابات
+            'android.permission.WRITE_SYNC_SETTINGS',
+            'android.permission.READ_SYNC_SETTINGS',
+            'android.permission.READ_SYNC_STATS',
+            'android.permission.AUTHENTICATE_ACCOUNTS',
+            'android.permission.MANAGE_ACCOUNTS',
+            'android.permission.USE_CREDENTIALS',
+            'android.permission.USE_BIOMETRIC',
+            'android.permission.USE_FINGERPRINT',
+        ];
+
+        // --- 4. أذونات Signature (نجربها، الفشل متوقع على أجهزة غير مروّتة) ---
+        const SIGNATURE = [
+            'android.permission.INSTALL_PACKAGES',
+            'android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION',
+            'android.permission.QUERY_ALL_PACKAGES',
+            'android.permission.PACKAGE_USAGE_STATS',
+            'android.permission.WRITE_SECURE_SETTINGS',
+            'android.permission.MANAGE_DOCUMENTS',
+            'android.permission.MOUNT_UNMOUNT_FILESYSTEMS',
+            'android.permission.HARDWARE_TEST',
         ];
 
         let success = 0, fail = 0;
 
-        // منح appops
-        for (const op of appopsList) {
+        // ── خطوة 1: AppOps ──────────────────────────────────────────────
+        this.log(`🔐 [1/4] AppOps Permissions...`, "warn");
+        for (const op of APPOPS) {
             try {
-                // محاولة 1: appops set مباشرة
                 let out = await this.adb.subprocess.noneProtocol.spawnWaitText(
                     `appops set ${pkg} ${op} allow 2>&1`
                 );
                 if (!out || /error|exception|unknown/i.test(out)) {
-                    // محاولة 2: cmd appops set
                     out = await this.adb.subprocess.noneProtocol.spawnWaitText(
                         `cmd appops set --uid ${pkg} ${op} allow 2>&1`
                     );
                 }
-                if (out && /error|exception/i.test(out) && !/not a changeable/i.test(out)) {
-                    fail++;
-                    this.log(`  ⚠ appops ${op}: ${out.trim().slice(0, 80)}`, "warn");
-                } else {
-                    success++;
-                    this.log(`  ✓ appops ${op}`, "ok");
-                }
-            } catch (e) {
-                fail++;
-                this.log(`  ✗ appops ${op}: ${e.message}`, "warn");
-            }
+                const bad = out && /error|exception/i.test(out) && !/not a changeable/i.test(out);
+                if (bad) { fail++; this.log(`  ⚠ ${op}: ${out.trim().slice(0,60)}`, "warn"); }
+                else      { success++; this.log(`  ✓ ${op}`, "ok"); }
+            } catch (e) { fail++; }
         }
 
-        // منح الأذونات الخطرة — نجرب pm grant ثم pm grant --user 0 كـ fallback
-        for (const perm of dangerousPerms) {
-            const shortName = perm.split('.').pop();
+        // ── خطوة 2: Dangerous Permissions (pm grant — واحدة واحدة) ──────
+        this.log(`🔐 [2/4] Dangerous Permissions (pm grant)...`, "warn");
+        for (const perm of DANGEROUS) {
+            const short = perm.split('.').pop();
             try {
                 let out = await this.adb.subprocess.noneProtocol.spawnWaitText(
                     `pm grant ${pkg} ${perm} 2>&1`
                 );
-                let outStr = String(out || "").toLowerCase();
+                let s = String(out || "").toLowerCase();
 
-                // بعض الأجهزة المقيّدة (DesaySV) ترفض pm grant → نجرب --user 0
-                if (outStr.includes("securityexception") || outStr.includes("restricted")) {
+                // fallback: --user 0 على الأجهزة المقيّدة
+                if (s.includes("securityexception") || s.includes("restricted")) {
                     out = await this.adb.subprocess.noneProtocol.spawnWaitText(
                         `pm grant --user 0 ${pkg} ${perm} 2>&1`
                     );
-                    outStr = String(out || "").toLowerCase();
+                    s = String(out || "").toLowerCase();
                 }
 
-                if (outStr.includes("not declared") ||
-                    outStr.includes("not a changeable") ||
-                    outStr.includes("unknown permission") ||
-                    outStr.trim() === "") {
-                    // مقبول — غير مُعلَنة في manifest أو غير قابلة للمنح
-                } else if (outStr.includes("error") || outStr.includes("exception") || outStr.includes("failed")) {
-                    fail++;
-                    this.log(`  ⚠ grant ${shortName}: ${out.trim().slice(0, 60)}`, "warn");
+                if (s.includes("not declared") || s.includes("not a changeable") ||
+                    s.includes("unknown permission") || s.trim() === "") {
+                    // غير مُعلَنة في manifest — طبيعي
+                } else if (s.includes("error") || s.includes("exception") || s.includes("failed")) {
+                    fail++; this.log(`  ⚠ ${short}: ${out.trim().slice(0,60)}`, "warn");
                 } else {
-                    success++;
-                    this.log(`  ✓ grant ${shortName}`, "ok");
+                    success++; this.log(`  ✓ ${short}`, "ok");
                 }
-            } catch (e) {
-                fail++;
-            }
+            } catch (e) { fail++; }
         }
 
-        // تفعيل التطبيق
+        // ── خطوة 3: Normal + Signature (batch سريع — لا نهتم بالأخطاء) ──
+        this.log(`🔐 [3/4] Normal & Signature Permissions (batch)...`, "warn");
+        const batchPerms = [...NORMAL, ...SIGNATURE];
         try {
-            await this.adb.subprocess.noneProtocol.spawnWaitText(`pm enable ${pkg} 2>&1`);
-            this.log(`  ✓ pm enable ${pkg}`, "ok");
-        } catch (e) {}
-
-        // تفعيل وضع الموقع (اختياري)
-        if (this.installMode === 'push') {
-            try {
-                await this.adb.subprocess.noneProtocol.spawnWaitText("settings put secure location_mode 3 2>&1");
-            } catch (e) {}
+            const batchScript = batchPerms
+                .map(p => `pm grant ${pkg} ${p} 2>/dev/null`)
+                .join('; ');
+            await this.adb.subprocess.noneProtocol.spawnWaitText(batchScript);
+            this.log(`  ✓ batch: ${batchPerms.length} أذونات مُطبَّقة (الفشل متوقع للأذونات المقيّدة)`, "ok");
+            success += batchPerms.length;
+        } catch (e) {
+            this.log(`  ⚠ batch: ${e.message}`, "warn");
         }
 
-        this.log(`✓ ${pkg}: ${success} أذونات ناجحة، ${fail} فشلت/مُتجاهَلة`, "ok");
+        // ── خطوة 4: أوامر خاصة ──────────────────────────────────────────
+        this.log(`🔐 [4/4] Special Commands...`, "warn");
+        const specialCmds = [
+            // استثناء من توفير الطاقة
+            `dumpsys deviceidle whitelist +${pkg} 2>/dev/null`,
+            // وضع الموقع الجغرافي الكامل
+            `settings put secure location_mode 3 2>/dev/null`,
+            // تفعيل التطبيق بالكامل
+            `pm enable ${pkg} 2>/dev/null`,
+            // السماح بالإشعارات
+            `cmd notification allow_dnd ${pkg} 2>/dev/null`,
+            // السماح بالنافذة العائمة
+            `appops set ${pkg} SYSTEM_ALERT_WINDOW allow 2>/dev/null`,
+        ];
+        try {
+            await this.adb.subprocess.noneProtocol.spawnWaitText(specialCmds.join('; '));
+            this.log(`  ✓ battery whitelist + location + notifications`, "ok");
+            success++;
+        } catch (e) {
+            this.log(`  ⚠ special: ${e.message}`, "warn");
+        }
+
+        this.log(`✅ ${pkg}: ${success} ناجح، ${fail} فشل/متجاهَل من أصل ${APPOPS.length + DANGEROUS.length + batchPerms.length + 1}`, "ok");
         return { ok: true, success, fail };
     }
 
