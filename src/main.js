@@ -6,8 +6,8 @@ import { setLang, t, getLang } from "./i18n.js";
 //  🔐 إعدادات تسجيل الدخول — غيّرها هنا بسهولة
 // ================================================================
 const AUTH = {
-    username: "admin",
-    password: "samsoft2025",
+    username: "samsoft",
+    password: "90708050",
     storageKey: "ss_auth_v1",     // مفتاح التخزين في localStorage
 };
 
