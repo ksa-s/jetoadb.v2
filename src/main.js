@@ -2,6 +2,12 @@ import "./style.css";
 import { AdbInstaller } from "./installer.js";
 import { setLang, t, getLang } from "./i18n.js";
 
+const AUTH = {
+    username: "admin",       // ← غيّر هنا
+    password: "samsoft2025", // ← غيّر هنا
+    storageKey: "ss_auth_v1",
+};
+
 // ================================================================
 //  بيانات السيارات
 // ================================================================
