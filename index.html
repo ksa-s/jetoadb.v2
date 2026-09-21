@@ -9,7 +9,38 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="shell">
+    <!-- ============================================================
+     Login Overlay — يظهر حتى يتم تسجيل الدخول الصحيح
+============================================================ -->
+<div id="loginOverlay" class="login-overlay">
+    <div class="login-card">
+        <div class="login-brand">
+            <div class="login-logo">⬡</div>
+            <div>
+                <div class="login-title">Sam Soft</div>
+                <div class="login-sub">مثبّت تطبيقات السيارات</div>
+            </div>
+        </div>
+        <div class="login-divider"></div>
+        <div class="login-fields">
+            <div class="login-field">
+                <label class="login-label">اسم المستخدم</label>
+                <input id="loginUser" type="text" class="login-input" placeholder="username" autocomplete="username" />
+            </div>
+            <div class="login-field">
+                <label class="login-label">كلمة المرور</label>
+                <input id="loginPass" type="password" class="login-input" placeholder="••••••" autocomplete="current-password" />
+            </div>
+            <p id="loginErr" class="login-err" hidden>❌ اسم المستخدم أو كلمة المرور غير صحيحة</p>
+            <button id="loginBtn" class="btn btn-primary login-btn">
+                <span>دخول</span>
+            </button>
+        </div>
+        <p class="login-footer">Sam Soft · WebADB · engine jetoadb-v2</p>
+    </div>
+</div>
+
+<div class="shell">
 
         <!-- Topbar -->
         <header class="topbar">
@@ -26,6 +57,7 @@
                     <span id="statusLabel">غير متصل</span>
                 </div>
                 <button id="langToggle" class="lang-toggle">EN</button>
+                <button id="logoutBtn" class="logout-btn" title="تسجيل الخروج">⏻</button>
             </div>
         </header>
 
