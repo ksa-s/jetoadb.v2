@@ -51,7 +51,7 @@ const CARS = [
     {
         id: 'other',
         brand: 'أخرى', model: 'عام',
-        img: null,
+        img: './cars/other.webp',
         protocols: [
             { key: 'other', label: 'تلقائي', desc: 'يجرب المباشر ثم الاحتياطي', restricted: false, icon: '⚡' },
         ],
