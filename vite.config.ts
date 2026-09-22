@@ -1,36 +1,34 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
+  // GitHub Actions تضع هذا المتغير تلقائياً عند البناء
+  const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+
   return {
-    base: './',
+    // '/jetoadb.v2/' لـ GitHub Pages | '/' لـ Vercel وغيره
+    base: isGitHubActions ? '/jetoadb.v2/' : '/',
     build: {
       outDir: 'dist',
       emptyOutDir: true,
-      // ── تشفير وتصغير الكود المنشور ──
       minify: 'terser',
       terserOptions: {
         compress: {
-          drop_console: false,   // نبقي console للـ debugging
           drop_debugger: true,
           passes: 2,
         },
         mangle: {
-          toplevel: true,        // تشويش أسماء المتغيرات العامة
+          toplevel: true,
         },
         format: {
-          comments: false,       // إزالة جميع التعليقات
+          comments: false,
         },
       },
-      // إخفاء مصدر الكود
       sourcemap: false,
-      // دمج كل شيء في ملف واحد (أصعب للقراءة)
       rollupOptions: {
         output: {
-          // اسم عشوائي للملفات
           entryFileNames: 'assets/[hash].js',
           chunkFileNames: 'assets/[hash].js',
           assetFileNames: 'assets/[hash].[ext]',
-          // دمج كل المكتبات في bundle واحد
           manualChunks: undefined,
         },
       },
