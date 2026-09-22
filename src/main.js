@@ -208,7 +208,7 @@ const CARS = [
     {
         id: 'changan-cs55',
         brand: 'Changan', model: 'CS55 Plus',
-        img: './cars/cs55-plus.webp',
+        img: null,
         protocols: [
             { key: 'changan-cs55', label: 'تثبيت مباشر', desc: 'بدون قيود', restricted: false, icon: '✓' },
         ],
@@ -216,7 +216,7 @@ const CARS = [
     {
         id: 'other',
         brand: 'أخرى', model: 'عام',
-        img: './cars/other.webp',
+        img: null,
         protocols: [
             { key: 'other', label: 'تلقائي', desc: 'يجرب المباشر ثم الاحتياطي', restricted: false, icon: '⚡' },
         ],
