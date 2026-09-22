@@ -6,8 +6,8 @@ import { setLang, t, getLang } from "./i18n.js";
 //  🔐 إعدادات تسجيل الدخول — غيّرها هنا بسهولة
 // ================================================================
 const AUTH = {
-    username: "samsoft",
-    password: "90708050",
+    username: "admin",
+    password: "samsoft2025",
     storageKey: "ss_auth_v1",     // مفتاح التخزين في localStorage
 };
 
@@ -66,6 +66,94 @@ loginUser.addEventListener("keydown", e => { if (e.key === "Enter") loginPass.fo
 logoutBtn.addEventListener("click", doLogout);
 
 
+// ================================================================
+//  مكتبة التطبيقات — روابط GitHub Releases مباشرة
+// ================================================================
+const GH = 'https://github.com/ksa-s/jetoadb.v2/releases/download';
+
+const APP_LIBRARY = [
+    {
+        id: 'aptoide',
+        name: 'Aptoide',         nameAr: 'أبتويد',
+        desc: 'متجر تطبيقات بديل — ملايين التطبيقات مجاناً بدون Google Play',
+        icon: '🏪', color: '#f59e0b',
+        file: `${GH}/aptoide/aptoide.apk`,
+        size: '20 MB', category: 'متجر',
+    },
+    {
+        id: 'youtube',
+        name: 'YouTube',          nameAr: 'يوتيوب',
+        desc: 'تطبيق يوتيوب الرسمي للفيديوهات والبث المباشر',
+        icon: '▶', color: '#f87171',
+        file: `${GH}/youtube/youtube.apk`,
+        size: '—', category: 'ترفيه',
+    },
+    {
+        id: 'drama-live',
+        name: 'Drama Live',       nameAr: 'دراما لايف',
+        desc: 'مسلسلات وأفلام عربية وأجنبية مباشرة مجاناً',
+        icon: '🎬', color: '#c084fc',
+        file: `${GH}/drama-live/drama-live.apk`,
+        size: '16 MB', category: 'ترفيه',
+    },
+    {
+        id: 'samsung-browser',
+        name: 'Samsung Internet', nameAr: 'متصفح سامسونج',
+        desc: 'متصفح سريع وآمن مع دعم AdBlock مدمج',
+        icon: '🌐', color: '#60a5fa',
+        file: `${GH}/Samsung-Internet-Browser/Samsung-Internet-Browser.apk`,
+        size: '—', category: 'متصفح',
+    },
+    {
+        id: 'yandex-map',
+        name: 'Yandex Maps',      nameAr: 'خرائط يانديكس',
+        desc: 'خرائط ملاحة دقيقة تعمل بدون خدمات Google',
+        icon: '🗺', color: '#4ade80',
+        file: `${GH}/Yandex-Map/Yandex-Map.apk`,
+        size: '—', category: 'ملاحة',
+    },
+    {
+        id: 'yandex-keyboard',
+        name: 'Yandex Keyboard',  nameAr: 'لوحة يانديكس',
+        desc: 'لوحة مفاتيح ذكية تدعم العربية والإنجليزية والروسية',
+        icon: '⌨️', color: '#22d3ee',
+        file: `${GH}/V1.0.0/yandex-keyboard.apk`,
+        size: '76 MB', category: 'إدخال',
+    },
+    {
+        id: 'file-manager',
+        name: 'File Manager',     nameAr: 'مدير الملفات',
+        desc: 'تصفح وإدارة جميع ملفات الجهاز بالكامل',
+        icon: '📁', color: '#fb923c',
+        file: `${GH}/file-manager/file-manager.apk`,
+        size: '22 MB', category: 'أدوات',
+    },
+    {
+        id: 'back-button',
+        name: 'Back Button Anywhere', nameAr: 'زر الرجوع',
+        desc: 'إضافة زر رجوع عائم في أي مكان على الشاشة',
+        icon: '↩', color: '#a78bfa',
+        file: `${GH}/back-button/back-button.apk`,
+        size: '7.1 MB', category: 'أدوات',
+    },
+    {
+        id: 'micro-g',
+        name: 'MicroG',           nameAr: 'مايكرو جي',
+        desc: 'بديل مفتوح المصدر لخدمات Google Play — ضروري لبعض التطبيقات',
+        icon: '🤖', color: '#34d399',
+        file: `${GH}/micro/micro-g.apk`,
+        size: '38 MB', category: 'نظام',
+    },
+    {
+        id: 'system-settings',
+        name: 'System Settings',  nameAr: 'إعدادات النظام',
+        desc: 'الوصول للإعدادات المتقدمة والمخفية في النظام',
+        icon: '⚙️', color: '#94a3b8',
+        file: `${GH}/V2/system-settings.apk`,
+        size: '2 MB', category: 'نظام',
+    },
+];
+
 const CARS = [
     {
         id: 'jetour-t2',
@@ -104,7 +192,7 @@ const CARS = [
     {
         id: 'changan-cs55',
         brand: 'Changan', model: 'CS55 Plus',
-        img: './cars/cs55-plus.webp',
+        img: null,
         protocols: [
             { key: 'changan-cs55', label: 'تثبيت مباشر', desc: 'بدون قيود', restricted: false, icon: '✓' },
         ],
@@ -112,7 +200,7 @@ const CARS = [
     {
         id: 'other',
         brand: 'أخرى', model: 'عام',
-        img: './cars/other.webp',
+        img: null,
         protocols: [
             { key: 'other', label: 'تلقائي', desc: 'يجرب المباشر ثم الاحتياطي', restricted: false, icon: '⚡' },
         ],
@@ -164,6 +252,8 @@ const keysResult      = document.getElementById("keysResult");
 const protocolPicker  = document.getElementById("protocolPicker");
 const protoOpts       = document.getElementById("protoOpts");
 const carGrid         = document.getElementById("carGrid");
+const appLibraryCard  = document.getElementById("appLibraryCard");
+const libGrid         = document.getElementById("libGrid");
 
 // ================================================================
 //  حالة
@@ -320,6 +410,7 @@ connectBtn.addEventListener("click", async () => {
         log(`${t("connected")}: ${info.model}`, "ok");
         appsManagerCard.hidden = false;
         carSettingsCard.hidden = false;
+        appLibraryCard.hidden  = false;
         loadApps();
     } catch (err) {
         log(`Error: ${err.message}`, "err");
@@ -336,6 +427,7 @@ disconnectBtn.addEventListener("click", async () => {
     connectBtn.disabled = !selectedProto;
     appsManagerCard.hidden = true;
     carSettingsCard.hidden = true;
+    appLibraryCard.hidden  = true;
     setDisconnected();
     log(t("disconnected"));
 });
@@ -590,3 +682,136 @@ document.querySelectorAll(".media-key").forEach(btn => {
 //  تهيئة
 // ================================================================
 buildCarGrid();
+
+// ================================================================
+//  مكتبة التطبيقات — بناء البطاقات وتثبيت التطبيقات
+// ================================================================
+
+function buildLibrary() {
+    libGrid.innerHTML = "";
+    for (const app of APP_LIBRARY) {
+        const card = document.createElement("div");
+        card.className = "lib-card";
+        card.id = `lib-${app.id}`;
+        card.innerHTML = `
+            <div class="lib-icon" style="background:${app.color}1a;border-color:${app.color}30;color:${app.color}">
+                ${app.icon}
+            </div>
+            <div class="lib-info">
+                <div class="lib-name">${app.nameAr}</div>
+                <div class="lib-name-en">${app.name}</div>
+                <div class="lib-desc">${app.desc}</div>
+                <div class="lib-meta">
+                    <span class="lib-category">${app.category}</span>
+                    <span class="lib-size">${app.size}</span>
+                </div>
+            </div>
+            <button class="lib-install-btn" data-id="${app.id}">
+                <span class="lib-btn-label">تثبيت</span>
+                <div class="lib-progress" hidden>
+                    <div class="lib-progress-bar"></div>
+                </div>
+            </button>`;
+        libGrid.appendChild(card);
+    }
+
+    // ربط أزرار التثبيت
+    libGrid.querySelectorAll(".lib-install-btn").forEach(btn => {
+        btn.addEventListener("click", () => installLibApp(btn.dataset.id));
+    });
+}
+
+async function installLibApp(appId) {
+    if (!installer) { log("❌ اتصل بالجهاز أولاً", "err"); return; }
+
+    const app   = APP_LIBRARY.find(a => a.id === appId);
+    const card  = document.getElementById(`lib-${appId}`);
+    const btn   = card.querySelector(".lib-install-btn");
+    const label = btn.querySelector(".lib-btn-label");
+    const progressWrap = btn.querySelector(".lib-progress");
+    const progressBar  = btn.querySelector(".lib-progress-bar");
+
+    btn.disabled = true;
+    label.textContent = "جارٍ التحميل...";
+    progressWrap.hidden = false;
+
+    // تحريك مؤقت ريثما يبدأ التحميل
+    let animFrame;
+    let fakePct = 0;
+    const fakeAnim = () => {
+        if (fakePct < 85) { fakePct += 0.4; progressBar.style.width = fakePct + '%'; }
+        animFrame = requestAnimationFrame(fakeAnim);
+    };
+
+    log(`─── ${app.nameAr} (${app.name}) ───`);
+    log(`$ fetch ${app.file.split('/').slice(-2).join('/')}`, "prompt");
+
+    try {
+        // GitHub releases تُعيد redirect — نتبعه تلقائياً
+        const response = await fetch(app.file, { mode: 'cors' });
+        if (!response.ok) throw new Error(`HTTP ${response.status} — تحقق من رابط الـ Release`);
+
+        const total  = parseInt(response.headers.get('content-length') || '0');
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+
+        if (total > 0) {
+            // حجم معروف → شريط تقدم حقيقي
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                const pct = Math.min(99, Math.round((received / total) * 100));
+                progressBar.style.width = pct + '%';
+                label.textContent = `${pct}%`;
+            }
+        } else {
+            // GitHub CDN لا يُرسل content-length دائماً → animation وهمية
+            animFrame = requestAnimationFrame(fakeAnim);
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                received += value.length;
+                label.textContent = `${(received / 1024 / 1024).toFixed(1)} MB`;
+            }
+            cancelAnimationFrame(animFrame);
+        }
+
+        // دمج الـ chunks في buffer واحد
+        const apkBytes = new Uint8Array(received);
+        let offset = 0;
+        for (const chunk of chunks) { apkBytes.set(chunk, offset); offset += chunk.length; }
+
+        const mb = (received / 1024 / 1024).toFixed(1);
+        log(`✓ تم تحميل ${mb} MB`, "ok");
+        label.textContent = "جارٍ التثبيت...";
+        progressBar.style.width = '100%';
+
+        // التثبيت عبر WebADB
+        const result = await installer.installApk(apkBytes, `${app.id}.apk`);
+
+        if (result.ok) {
+            log(`✅ ${app.nameAr}: تم التثبيت بنجاح`, "ok");
+            btn.classList.add("installed");
+            label.textContent = "✓ مُثبَّت";
+            progressWrap.hidden = true;
+            card.classList.add("lib-card-done");
+        } else {
+            throw new Error(result.error || "فشل التثبيت");
+        }
+
+    } catch (err) {
+        if (animFrame) cancelAnimationFrame(animFrame);
+        log(`✗ ${app.nameAr}: ${err.message}`, "err");
+        label.textContent = "أعد المحاولة";
+        progressWrap.hidden = true;
+        btn.disabled = false;
+        progressBar.style.width = '0%';
+    }
+}
+
+// بناء المكتبة عند تهيئة الصفحة
+buildLibrary();
