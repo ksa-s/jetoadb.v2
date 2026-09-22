@@ -208,7 +208,7 @@ const CARS = [
     {
         id: 'changan-cs55',
         brand: 'Changan', model: 'CS55 Plus',
-        img: './cars/cs55-plus.webp',
+        img: null,
         protocols: [
             { key: 'changan-cs55', label: 'تثبيت مباشر', desc: 'بدون قيود', restricted: false, icon: '✓' },
         ],
@@ -216,7 +216,7 @@ const CARS = [
     {
         id: 'other',
         brand: 'أخرى', model: 'عام',
-        img: './cars/other.webp',
+        img: null,
         protocols: [
             { key: 'other', label: 'تلقائي', desc: 'يجرب المباشر ثم الاحتياطي', restricted: false, icon: '⚡' },
         ],
@@ -427,9 +427,12 @@ connectBtn.addEventListener("click", async () => {
         connectBtn.hidden = true;
         setConnected(info.model);
         log(`${t("connected")}: ${info.model}`, "ok");
-        appsManagerCard.hidden = false;
-        carSettingsCard.hidden = false;
-        appLibraryCard.hidden  = false;
+
+        // null guards — العناصر الاختيارية قد لا تكون في HTML بعض النسخ
+        if (appsManagerCard) appsManagerCard.hidden = false;
+        if (carSettingsCard) carSettingsCard.hidden = false;
+        if (appLibraryCard)  appLibraryCard.hidden  = false;
+
         loadApps();
     } catch (err) {
         log(`Error: ${err.message}`, "err");
@@ -444,9 +447,9 @@ disconnectBtn.addEventListener("click", async () => {
     disconnectBtn.hidden = true;
     connectBtn.hidden = false;
     connectBtn.disabled = !selectedProto;
-    appsManagerCard.hidden = true;
-    carSettingsCard.hidden = true;
-    appLibraryCard.hidden  = true;
+    if (appsManagerCard) appsManagerCard.hidden = true;
+    if (carSettingsCard) carSettingsCard.hidden = true;
+    if (appLibraryCard)  appLibraryCard.hidden  = true;
     setDisconnected();
     log(t("disconnected"));
 });
