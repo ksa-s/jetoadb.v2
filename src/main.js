@@ -154,6 +154,22 @@ const APP_LIBRARY = [
     },
 ];
 
+// ================================================================
+//  تطبيقات حصرية — تظهر فقط لسيارات ماركة معينة
+// ================================================================
+const BRAND_EXCLUSIVE = {
+    haval: ['system-settings', 'samsung-browser'],   // حصري لهافال فقط
+};
+const ALL_EXCLUSIVE = new Set(Object.values(BRAND_EXCLUSIVE).flat());
+
+function getAppsForCar(car) {
+    const brand   = car ? car.id.split('-')[0] : '';
+    const allowed = new Set(BRAND_EXCLUSIVE[brand] || []);
+    return APP_LIBRARY.filter(app =>
+        !ALL_EXCLUSIVE.has(app.id) || allowed.has(app.id)
+    );
+}
+
 const CARS = [
     {
         id: 'jetour-t2',
@@ -192,7 +208,7 @@ const CARS = [
     {
         id: 'changan-cs55',
         brand: 'Changan', model: 'CS55 Plus',
-        img: './cars/cs55-plus.webp',
+        img: null,
         protocols: [
             { key: 'changan-cs55', label: 'تثبيت مباشر', desc: 'بدون قيود', restricted: false, icon: '✓' },
         ],
@@ -200,7 +216,7 @@ const CARS = [
     {
         id: 'other',
         brand: 'أخرى', model: 'عام',
-        img: './cars/other.webp',
+        img: null,
         protocols: [
             { key: 'other', label: 'تلقائي', desc: 'يجرب المباشر ثم الاحتياطي', restricted: false, icon: '⚡' },
         ],
@@ -363,6 +379,9 @@ function onCarClick(car) {
     }
 
     protocolPicker.hidden = false;
+
+    // إعادة بناء المكتبة حسب الماركة الجديدة
+    buildLibrary();
 
     // إذا كان بروتوكول واحد فقط → اختار تلقائياً
     if (car.protocols.length === 1) {
@@ -688,8 +707,10 @@ buildCarGrid();
 // ================================================================
 
 function buildLibrary() {
+    const apps = getAppsForCar(selectedCar);   // ← فلترة حسب الماركة
     libGrid.innerHTML = "";
-    for (const app of APP_LIBRARY) {
+
+    for (const app of apps) {
         const card = document.createElement("div");
         card.className = "lib-card";
         card.id = `lib-${app.id}`;
