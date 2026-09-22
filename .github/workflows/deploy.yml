@@ -1,13 +1,12 @@
-name: Build & Deploy (Source Hidden)
+name: Deploy Vite site to Pages
 
 on:
   push:
     branches: ["main"]
   workflow_dispatch:
 
-# لا صلاحيات قراءة المحتوى للـ public — فقط الكتابة لـ Pages
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -28,35 +27,36 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: |
-         bun install
-         bun add -D terser
+        run: bun install
 
-      - name: Verify g.jar
+      - name: Verify g.jar exists
         run: |
           if [ ! -f public/tools/g.jar ]; then
-            echo "⚠️  g.jar not found, creating placeholder..."
+            echo "⚠️ g.jar not found, creating placeholder..."
             mkdir -p public/tools
             echo "placeholder" > public/tools/g.jar
           fi
+          ls -lh public/tools/g.jar
 
-      - name: Build (minified + obfuscated)
+      - name: Build
         run: bun run build
 
-      - name: Remove source maps (extra security)
-        run: find dist -name "*.map" -delete 2>/dev/null || true
+      - name: Verify build
+        run: |
+          echo "=== dist contents ==="
+          ls -lh dist/
+          ls -lh dist/tools/ || echo "tools/ not found"
+          echo "=== dist/index.html ==="
+          cat dist/index.html | head -20
 
-      # ─── نشر dist/ فقط إلى branch منفصل (gh-pages) ───
-      # الكود المصدري يبقى في main ولا يُنشر أبداً
-      - name: Deploy dist/ to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          publish_branch: gh-pages
-          force_orphan: false
-          # لا ملفات مصدر — فقط الـ dist المبني والمضغوط
-          exclude_assets: ''
-          user_name: 'github-actions[bot]'
-          user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'deploy: built output only [skip ci]'
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
