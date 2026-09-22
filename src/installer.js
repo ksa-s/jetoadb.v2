@@ -432,7 +432,20 @@ export class AdbInstaller {
     }
 
     async syncPushOnce(remotePath, buffer) {
-        const sync = await this.adb.sync();
+        if (!this.adb) {
+            throw new Error("انقطع الاتصال بالجهاز — أعد الاتصال وحاول مجدداً");
+        }
+        let sync;
+        try {
+            sync = await this.adb.sync();
+        } catch (e) {
+            // أخطاء USB الشائعة نعطيها رسالة أوضح
+            const msg = e.message || "";
+            if (msg.includes("transferIn") || msg.includes("cancelled") || msg.includes("state is in progress")) {
+                throw new Error("خطأ USB — الجهاز مشغول أو انقطع الكيبل، افصل وأعد الاتصال");
+            }
+            throw e;
+        }
         try {
             await sync.write({ filename: remotePath, file: apkToReadableStream(buffer) });
         } finally {
