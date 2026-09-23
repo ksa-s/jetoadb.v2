@@ -268,8 +268,42 @@ const keysResult      = document.getElementById("keysResult");
 const protocolPicker  = document.getElementById("protocolPicker");
 const protoOpts       = document.getElementById("protoOpts");
 const carGrid         = document.getElementById("carGrid");
-const appLibraryCard  = document.getElementById("appLibraryCard");
-const libGrid         = document.getElementById("libGrid");
+// ── مكتبة التطبيقات: نحصل على العنصر أو ننشئه ديناميكياً إذا كان ناقصاً من HTML ──
+let appLibraryCard = document.getElementById("appLibraryCard");
+let libGrid        = document.getElementById("libGrid");
+
+if (!appLibraryCard) {
+    // العنصر مفقود من HTML → ننشئه في JS
+    appLibraryCard = document.createElement("section");
+    appLibraryCard.className = "panel";
+    appLibraryCard.id = "appLibraryCard";
+    appLibraryCard.hidden = true;
+    appLibraryCard.innerHTML = `
+        <div class="section-head">
+            <span class="section-title">🏪 مكتبة التطبيقات</span>
+            <span class="lib-badge" style="font-size:10px;font-weight:700;padding:3px 8px;
+                background:rgba(245,158,11,0.1);color:#f59e0b;
+                border:1px solid rgba(245,158,11,0.35);border-radius:100px">جاهزة للتثبيت</span>
+        </div>
+        <div class="lib-grid" id="libGrid"></div>`;
+
+    // أدرج قبل قسم إدارة التطبيقات
+    const anchor = document.getElementById("appsManagerCard")
+                || document.getElementById("carSettingsCard")
+                || document.querySelector(".panel-terminal");
+
+    const container = document.querySelector("main.content")
+                   || document.querySelector("main")
+                   || document.querySelector(".shell");
+
+    if (anchor && anchor.parentNode) {
+        anchor.parentNode.insertBefore(appLibraryCard, anchor);
+    } else if (container) {
+        container.appendChild(appLibraryCard);
+    }
+
+    libGrid = document.getElementById("libGrid");
+}
 
 // ================================================================
 //  حالة
@@ -428,10 +462,9 @@ connectBtn.addEventListener("click", async () => {
         setConnected(info.model);
         log(`${t("connected")}: ${info.model}`, "ok");
 
-        // null guards — العناصر الاختيارية قد لا تكون في HTML بعض النسخ
         if (appsManagerCard) appsManagerCard.hidden = false;
         if (carSettingsCard) carSettingsCard.hidden = false;
-        if (appLibraryCard)  appLibraryCard.hidden  = false;
+        appLibraryCard.hidden = false;   // مضمون الوجود (مُنشأ ديناميكياً إذا كان ناقصاً)
 
         loadApps();
     } catch (err) {
@@ -449,7 +482,7 @@ disconnectBtn.addEventListener("click", async () => {
     connectBtn.disabled = !selectedProto;
     if (appsManagerCard) appsManagerCard.hidden = true;
     if (carSettingsCard) carSettingsCard.hidden = true;
-    if (appLibraryCard)  appLibraryCard.hidden  = true;
+    appLibraryCard.hidden = true;
     setDisconnected();
     log(t("disconnected"));
 });
