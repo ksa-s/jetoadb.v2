@@ -742,133 +742,227 @@ buildCarGrid();
 //  مكتبة التطبيقات — بناء البطاقات وتثبيت التطبيقات
 // ================================================================
 
-function buildLibrary() {
-    const apps = getAppsForCar(selectedCar);   // ← فلترة حسب الماركة
-    libGrid.innerHTML = "";
+// ================================================================
+//  GitHub API — جلب روابط CDN المباشرة (بدون مشكلة CORS)
+//  طلب واحد فقط يحضر كل الروابط لجميع الـ releases
+// ================================================================
+const GH_REPO = 'ksa-s/jetoadb.v2';
+let ghUrlCache = {};   // filename → direct CDN URL
 
-    for (const app of apps) {
-        const card = document.createElement("div");
-        card.className = "lib-card";
-        card.id = `lib-${app.id}`;
-        card.innerHTML = `
-            <div class="lib-icon" style="background:${app.color}1a;border-color:${app.color}30;color:${app.color}">
-                ${app.icon}
-            </div>
-            <div class="lib-info">
-                <div class="lib-name">${app.nameAr}</div>
-                <div class="lib-name-en">${app.name}</div>
-                <div class="lib-desc">${app.desc}</div>
-                <div class="lib-meta">
-                    <span class="lib-category">${app.category}</span>
-                    <span class="lib-size">${app.size}</span>
-                </div>
-            </div>
-            <button class="lib-install-btn" data-id="${app.id}">
-                <span class="lib-btn-label">تثبيت</span>
-                <div class="lib-progress" hidden>
-                    <div class="lib-progress-bar"></div>
-                </div>
-            </button>`;
-        libGrid.appendChild(card);
+async function prefetchGHUrls() {
+    try {
+        const r = await fetch(
+            `https://api.github.com/repos/${GH_REPO}/releases`,
+            { headers: { Accept: 'application/vnd.github.v3+json' } }
+        );
+        if (!r.ok) return;
+        const releases = await r.json();
+        for (const rel of releases) {
+            for (const asset of (rel.assets || [])) {
+                // browser_download_url → objects.githubusercontent.com (CORS مفعّل)
+                ghUrlCache[asset.name.toLowerCase()] = asset.browser_download_url;
+            }
+        }
+        console.log(`[GH] cached ${Object.keys(ghUrlCache).length} release assets`);
+    } catch (e) {
+        console.warn('[GH] API unavailable, will use direct URLs');
     }
-
-    // ربط أزرار التثبيت
-    libGrid.querySelectorAll(".lib-install-btn").forEach(btn => {
-        btn.addEventListener("click", () => installLibApp(btn.dataset.id));
-    });
 }
 
-async function installLibApp(appId) {
-    if (!installer) { log("❌ اتصل بالجهاز أولاً", "err"); return; }
+// ================================================================
+//  بناء المكتبة — قائمة تحديد (checkbox) + زر تثبيت واحد
+// ================================================================
+function buildLibrary() {
+    if (!libGrid) return;
+    const apps = getAppsForCar(selectedCar);
 
-    const app   = APP_LIBRARY.find(a => a.id === appId);
-    const card  = document.getElementById(`lib-${appId}`);
-    const btn   = card.querySelector(".lib-install-btn");
-    const label = btn.querySelector(".lib-btn-label");
-    const progressWrap = btn.querySelector(".lib-progress");
-    const progressBar  = btn.querySelector(".lib-progress-bar");
+    libGrid.innerHTML = "";
 
-    btn.disabled = true;
-    label.textContent = "جارٍ التحميل...";
-    progressWrap.hidden = false;
+    // ── قائمة التطبيقات ──
+    const list = document.createElement("div");
+    list.className = "lib-checklist";
 
-    // تحريك مؤقت ريثما يبدأ التحميل
-    let animFrame;
-    let fakePct = 0;
-    const fakeAnim = () => {
-        if (fakePct < 85) { fakePct += 0.4; progressBar.style.width = fakePct + '%'; }
-        animFrame = requestAnimationFrame(fakeAnim);
+    for (const app of apps) {
+        const label = document.createElement("label");
+        label.className = "lib-item";
+        label.htmlFor = `libck-${app.id}`;
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "lib-check";
+        cb.id = `libck-${app.id}`;
+        cb.dataset.id = app.id;
+        cb.checked = true;
+
+        const name = document.createElement("span");
+        name.className = "lib-item-name";
+        name.textContent = app.nameAr;
+
+        const status = document.createElement("span");
+        status.className = "lib-item-status";
+        status.id = `lib-st-${app.id}`;
+
+        label.append(cb, name, status);
+        list.appendChild(label);
+    }
+
+    // ── شريط التحكم (تحديد الكل) ──
+    const ctrl = document.createElement("div");
+    ctrl.className = "lib-ctrl";
+
+    const selectAll = document.createElement("button");
+    selectAll.className = "lib-ctrl-btn";
+    selectAll.textContent = "تحديد الكل";
+    selectAll.onclick = () => {
+        const checks = libGrid.querySelectorAll(".lib-check");
+        const allChecked = [...checks].every(c => c.checked);
+        checks.forEach(c => c.checked = !allChecked);
+        selectAll.textContent = allChecked ? "تحديد الكل" : "إلغاء الكل";
+        updateInstallCount();
     };
 
-    log(`─── ${app.nameAr} (${app.name}) ───`);
-    log(`$ fetch ${app.file.split('/').slice(-2).join('/')}`, "prompt");
+    ctrl.appendChild(selectAll);
+
+    // ── زر التثبيت الجماعي ──
+    const installBtn = document.createElement("button");
+    installBtn.className = "btn lib-install-all";
+    installBtn.id = "libInstallAllBtn";
+    installBtn.onclick = installSelectedApps;
+
+    function updateInstallCount() {
+        const n = libGrid.querySelectorAll(".lib-check:checked").length;
+        installBtn.textContent = n > 0 ? `تثبيت المحدد (${n})` : "تثبيت المحدد";
+        installBtn.disabled = n === 0 || !installer;
+    }
+
+    libGrid.querySelectorAll && libGrid.addEventListener("change", updateInstallCount);
+
+    libGrid.append(ctrl, list, installBtn);
+    updateInstallCount();
+
+    // تحديث العداد عند تغيير الاختيار
+    list.addEventListener("change", updateInstallCount);
+}
+
+// ================================================================
+//  تثبيت التطبيقات المحددة بالترتيب
+// ================================================================
+async function installSelectedApps() {
+    if (!installer) { log("❌ اتصل بالجهاز أولاً", "err"); return; }
+
+    const btn = document.getElementById("libInstallAllBtn");
+    if (btn) btn.disabled = true;
+
+    const checked = [...libGrid.querySelectorAll(".lib-check:checked")]
+        .map(cb => APP_LIBRARY.find(a => a.id === cb.dataset.id))
+        .filter(Boolean);
+
+    if (checked.length === 0) {
+        log("لم تحدد أي تطبيق", "warn");
+        if (btn) btn.disabled = false;
+        return;
+    }
+
+    log(`▶ تثبيت ${checked.length} تطبيق...`, "warn");
+
+    let ok = 0, fail = 0;
+    for (const app of checked) {
+        const success = await installLibApp(app.id);
+        if (success) ok++; else fail++;
+    }
+
+    log(`═══ ${ok} ناجح، ${fail} فاشل ═══`, fail === 0 ? "ok" : "warn");
+    if (btn) { btn.disabled = false; btn.textContent = "تثبيت المحدد"; }
+}
+
+// ================================================================
+//  تحميل وتثبيت تطبيق واحد — مع GitHub CDN URL
+// ================================================================
+async function installLibApp(appId) {
+    const app = APP_LIBRARY.find(a => a.id === appId);
+    if (!app || !installer) return false;
+
+    const statusEl = document.getElementById(`lib-st-${appId}`);
+    const checkEl  = document.getElementById(`libck-${appId}`);
+
+    const setStatus = (text, cls) => {
+        if (!statusEl) return;
+        statusEl.textContent = text;
+        statusEl.className = `lib-item-status ${cls || ""}`;
+    };
+
+    setStatus("⏳ تحميل...", "loading");
+    log(`─── ${app.nameAr} ───`);
+
+    // نحصل على الرابط المباشر من cache أو نعود للـ fallback
+    const filename = app.file.split('/').pop();
+    const url = ghUrlCache[filename.toLowerCase()] || app.file;
+
+    log(`$ fetch ${filename}`, "prompt");
 
     try {
-        // GitHub releases تُعيد redirect — نتبعه تلقائياً
-        const response = await fetch(app.file, { mode: 'cors' });
-        if (!response.ok) throw new Error(`HTTP ${response.status} — تحقق من رابط الـ Release`);
+        const response = await fetch(url, { mode: 'cors' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
         const total  = parseInt(response.headers.get('content-length') || '0');
         const reader = response.body.getReader();
         const chunks = [];
         let received = 0;
 
-        if (total > 0) {
-            // حجم معروف → شريط تقدم حقيقي
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                received += value.length;
-                const pct = Math.min(99, Math.round((received / total) * 100));
-                progressBar.style.width = pct + '%';
-                label.textContent = `${pct}%`;
-            }
-        } else {
-            // GitHub CDN لا يُرسل content-length دائماً → animation وهمية
-            animFrame = requestAnimationFrame(fakeAnim);
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                received += value.length;
-                label.textContent = `${(received / 1024 / 1024).toFixed(1)} MB`;
-            }
-            cancelAnimationFrame(animFrame);
+        // animation وهمية إذا لم يُرسل الحجم (GitHub CDN)
+        let animFrame;
+        let fakePct = 0;
+        if (total === 0) {
+            const tick = () => {
+                fakePct = Math.min(fakePct + 0.3, 90);
+                setStatus(`${fakePct.toFixed(0)}%`, "loading");
+                animFrame = requestAnimationFrame(tick);
+            };
+            animFrame = requestAnimationFrame(tick);
         }
 
-        // دمج الـ chunks في buffer واحد
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            if (total > 0) {
+                const pct = Math.min(99, Math.round(received / total * 100));
+                setStatus(`${pct}%`, "loading");
+            } else {
+                setStatus(`${(received/1024/1024).toFixed(1)} MB`, "loading");
+            }
+        }
+        if (animFrame) cancelAnimationFrame(animFrame);
+
         const apkBytes = new Uint8Array(received);
         let offset = 0;
         for (const chunk of chunks) { apkBytes.set(chunk, offset); offset += chunk.length; }
 
-        const mb = (received / 1024 / 1024).toFixed(1);
-        log(`✓ تم تحميل ${mb} MB`, "ok");
-        label.textContent = "جارٍ التثبيت...";
-        progressBar.style.width = '100%';
+        log(`✓ تم تحميل ${(received/1024/1024).toFixed(1)} MB`, "ok");
+        setStatus("📦 تثبيت...", "loading");
 
-        // التثبيت عبر WebADB
         const result = await installer.installApk(apkBytes, `${app.id}.apk`);
 
         if (result.ok) {
-            log(`✅ ${app.nameAr}: تم التثبيت بنجاح`, "ok");
-            btn.classList.add("installed");
-            label.textContent = "✓ مُثبَّت";
-            progressWrap.hidden = true;
-            card.classList.add("lib-card-done");
+            log(`✅ ${app.nameAr}: تم بنجاح`, "ok");
+            setStatus("✓ مُثبَّت", "done");
+            if (checkEl) checkEl.checked = false;   // إلغاء التحديد بعد النجاح
+            return true;
         } else {
             throw new Error(result.error || "فشل التثبيت");
         }
 
     } catch (err) {
-        if (animFrame) cancelAnimationFrame(animFrame);
+        if (err.animFrame) cancelAnimationFrame(err.animFrame);
         log(`✗ ${app.nameAr}: ${err.message}`, "err");
-        label.textContent = "أعد المحاولة";
-        progressWrap.hidden = true;
-        btn.disabled = false;
-        progressBar.style.width = '0%';
+        setStatus("✗ فشل", "fail");
+        return false;
     }
 }
 
-// بناء المكتبة عند تهيئة الصفحة
+// ================================================================
+//  تهيئة — جلب روابط GitHub مسبقاً + بناء المكتبة
+// ================================================================
+prefetchGHUrls();   // ← طلب GitHub API واحد في الخلفية
 buildLibrary();
