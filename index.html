@@ -7,6 +7,104 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- تنسيقات مخصصة للزر والنافذة المنبثقة لتعليمات الماركات -->
+    <style>
+        .brands-nav-btn {
+            background: rgba(234, 179, 8, 0.15);
+            color: #facc15;
+            border: 1px solid rgba(234, 179, 8, 0.4);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            margin-top: 10px;
+        }
+        .brands-nav-btn:hover {
+            background: rgba(234, 179, 8, 0.25);
+            border-color: #facc15;
+            transform: translateY(-1px);
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(4px);
+        }
+        .modal-overlay[hidden] {
+            display: none !important;
+        }
+        .modal-card {
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 16px;
+            width: 90%;
+            max-width: 600px;
+            padding: 24px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            color: #fff;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #1f2937;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }
+        .modal-close {
+            background: transparent;
+            border: none;
+            color: #9ca3af;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .modal-close:hover { color: #fff; }
+        .brands-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 12px;
+            max-height: 60vh;
+            overflow-y: auto;
+            padding: 4px;
+        }
+        .brand-item {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+            text-decoration: none;
+            color: #f3f4f6;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .brand-item:hover {
+            border-color: #facc15;
+            background: #374151;
+            transform: scale(1.03);
+        }
+        .brand-icon {
+            font-size: 1.8rem;
+        }
+    </style>
 </head>
 <body>
     <!-- ============================================================
@@ -20,19 +118,15 @@
                 <div class="login-title">Sam Soft</div>
                 <div class="login-sub">مثبّت تطبيقات السيارات</div>
             </div>
-            <!-- زر تعليمات التوصيل والتثبيت في الواجهة الرئيسية -->
-<div class="mt-6 text-center">
-    <a href="brands.html" class="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-black font-bold py-3 px-8 rounded-xl shadow-lg transition transform hover:-translate-y-0.5">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-        </svg>
-        تعليمات التوصيل وتثبيت التطبيقات (8 شركات)
-    </a>
-</div>
         </div>
         <div class="login-divider"></div>
         <div class="login-fields">
-            <div class="login-field">
+            <!-- زر التعليمات مضاف بشكل بارز داخل بطاقة التسجيل -->
+            <button type="button" class="brands-nav-btn" style="width: 100%; justify-content: center;" onclick="toggleBrandsModal()">
+                ℹ️ تعليمات التوصيل وتثبيت التطبيقات (8 شركات)
+            </button>
+
+            <div class="login-field" style="margin-top: 10px;">
                 <label class="login-label">اسم المستخدم</label>
                 <input id="loginUser" type="text" class="login-input" placeholder="username" autocomplete="username" />
             </div>
@@ -61,6 +155,9 @@
                 </div>
             </div>
             <div class="topbar-end">
+                <button type="button" class="brands-nav-btn" onclick="toggleBrandsModal()">
+                    ℹ️ تعليمات التثبيت (8 شركات)
+                </button>
                 <div class="status-pill" id="statusPill">
                     <span class="status-dot" id="statusDot"></span>
                     <span id="statusLabel">غير متصل</span>
@@ -247,6 +344,79 @@
         </footer>
 
     </div>
+
+    <!-- النافذة المنبثقة لاختيار العلامة التجارية -->
+    <div id="brandsModal" class="modal-overlay" hidden>
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 style="margin: 0; font-size: 1.1rem; color: #facc15;">اختر العلامة التجارية لعرض التعليمات</h3>
+                <button class="modal-close" onclick="toggleBrandsModal()">&times;</button>
+            </div>
+            <div class="brands-grid">
+                <!-- Changan -->
+                <a href="changan.html" class="brand-item">
+                    <span class="brand-icon">🚗</span>
+                    <span>Changan</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">15 طرازاً</small>
+                </a>
+                <!-- العلامة 2 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>Jetour</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+                <!-- العلامة 3 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>Geely</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+                <!-- العلامة 4 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>Haval</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+                <!-- العلامة 5 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>Chery</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+                <!-- العلامة 6 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>MG</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+                <!-- العلامة 7 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>GAC</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+                <!-- العلامة 8 -->
+                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
+                    <span class="brand-icon">🚘</span>
+                    <span>BYD</span>
+                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- السكريبت الخاص بفتح/إغلاق النافذة المنبثقة -->
+    <script>
+        function toggleBrandsModal() {
+            const modal = document.getElementById('brandsModal');
+            if (modal.hasAttribute('hidden')) {
+                modal.removeAttribute('hidden');
+            } else {
+                modal.setAttribute('hidden', '');
+            }
+        }
+    </script>
+
     <script type="module" src="./src/main.js"></script>
 </body>
 </html>
