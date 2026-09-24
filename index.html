@@ -75,7 +75,7 @@
         .modal-close:hover { color: #fff; }
         .brands-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
             gap: 12px;
             max-height: 60vh;
             overflow-y: auto;
@@ -107,23 +107,6 @@
     </style>
 </head>
 <body>
-    <!-- شبكة طرازات شانجان داخل النافذة المنبثقة -->
-<div class="brands-grid">
-    <a href="/brands/changan/alsvin/" class="brand-item">
-        <span class="brand-icon">🚗</span>
-        <span>ألسفن (Alsvin)</span>
-    </a>
-    
-    <a href="/brands/changan/cs35-plus/" class="brand-item">
-        <span class="brand-icon">🚘</span>
-        <span>CS35 Plus</span>
-    </a>
-
-    <a href="/brands/changan/cs75-plus/" class="brand-item">
-        <span class="brand-icon">🚙</span>
-        <span>CS75 Plus</span>
-    </a>
-</div>
 
     <!-- ============================================================
      Login Overlay — يظهر حتى يتم تسجيل الدخول الصحيح
@@ -139,9 +122,9 @@
         </div>
         <div class="login-divider"></div>
         <div class="login-fields">
-            <!-- زر التعليمات مضاف بشكل بارز داخل بطاقة التسجيل -->
+            <!-- زر التعليمات داخل بطاقة التسجيل -->
             <button type="button" class="brands-nav-btn" style="width: 100%; justify-content: center;" onclick="toggleBrandsModal()">
-                ℹ️ تعليمات التوصيل وتثبيت التطبيقات (8 شركات)
+                ℹ️ تعليمات التوصيل وتثبيت التطبيقات
             </button>
 
             <div class="login-field" style="margin-top: 10px;">
@@ -174,7 +157,7 @@
             </div>
             <div class="topbar-end">
                 <button type="button" class="brands-nav-btn" onclick="toggleBrandsModal()">
-                    ℹ️ تعليمات التثبيت (8 شركات)
+                    ℹ️ تعليمات التثبيت
                 </button>
                 <div class="status-pill" id="statusPill">
                     <span class="status-dot" id="statusDot"></span>
@@ -191,14 +174,12 @@
             <section class="panel">
                 <span class="field-label" data-i18n="selectModel">اختر سيارتك</span>
 
-                <!-- hidden select للتوافق مع JS الموجود -->
                 <select id="modelSelect" hidden></select>
 
                 <div class="car-grid" id="carGrid">
                     <!-- تُولَّد بواسطة main.js -->
                 </div>
 
-                <!-- اختيار البروتوكول — يظهر بعد اختيار السيارة -->
                 <div class="protocol-picker" id="protocolPicker" hidden>
                     <p class="protocol-heading">إصدار نظام الشاشة</p>
                     <div class="protocol-options" id="protoOpts">
@@ -363,60 +344,56 @@
 
     </div>
 
-    <!-- النافذة المنبثقة لاختيار العلامة التجارية -->
+    <!-- النافذة المنبثقة لاختيار التعليمات حسب الشركة/الطراز -->
     <div id="brandsModal" class="modal-overlay" hidden>
         <div class="modal-card">
             <div class="modal-header">
-                <h3 style="margin: 0; font-size: 1.1rem; color: #facc15;">اختر العلامة التجارية لعرض التعليمات</h3>
+                <h3 style="margin: 0; font-size: 1.1rem; color: #facc15;">اختر طراز السيارة عرض التعليمات</h3>
                 <button class="modal-close" onclick="toggleBrandsModal()">&times;</button>
             </div>
             <div class="brands-grid">
-                <!-- Changan -->
-                <a href="changan.html" class="brand-item">
+                <!-- Changan Alsvin -->
+                <a href="/brands/changan/alsvin/" class="brand-item">
                     <span class="brand-icon">🚗</span>
-                    <span>Changan</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">15 طرازاً</small>
+                    <span>Changan Alsvin</span>
+                    <small style="color: #facc15; font-size: 0.7rem;">متاح الآن</small>
                 </a>
-                <!-- العلامة 2 -->
+                <!-- Changan CS35 Plus -->
+                <a href="/brands/changan/cs35-plus/" class="brand-item">
+                    <span class="brand-icon">🚘</span>
+                    <span>CS35 Plus</span>
+                    <small style="color: #facc15; font-size: 0.7rem;">متاح الآن</small>
+                </a>
+                <!-- Changan CS75 Plus -->
+                <a href="/brands/changan/cs75-plus/" class="brand-item">
+                    <span class="brand-icon">🚙</span>
+                    <span>CS75 Plus</span>
+                    <small style="color: #facc15; font-size: 0.7rem;">متاح الآن</small>
+                </a>
+                <!-- باقي السيارات المتبقية -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Jetour</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
-                <!-- العلامة 3 -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Geely</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
-                <!-- العلامة 4 -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Haval</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
-                <!-- العلامة 5 -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Chery</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
-                <!-- العلامة 6 -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>MG</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
-                </div>
-                <!-- العلامة 7 -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
-                    <span>GAC</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
-                </div>
-                <!-- العلامة 8 -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
-                    <span>BYD</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
             </div>
