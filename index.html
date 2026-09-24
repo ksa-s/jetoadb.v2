@@ -1,244 +1,254 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sam Soft — أداة تثبيت التطبيقات</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sam Soft — أداة تثبيت التطبيقات</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<!-- ============================================================
-Login Overlay — يظهر حتى يتم تسجيل الدخول الصحيح
+    <!-- ============================================================
+     Login Overlay — يظهر حتى يتم تسجيل الدخول الصحيح
 ============================================================ -->
 <div id="loginOverlay" class="login-overlay">
-<div class="login-card">
-<div class="login-brand">
-<div class="login-logo">⬡</div>
-<div>
-<div class="login-title">Sam Soft</div>
-<div class="login-sub">مثبّت تطبيقات السيارات</div>
-</div>
-</div>
-<div class="login-divider"></div>
-<div class="login-fields">
-<div class="login-field">
-<label class="login-label">اسم المستخدم</label>
-<input id="loginUser" type="text" class="login-input" placeholder="username" autocomplete="username" />
-</div>
-<div class="login-field">
-<label class="login-label">كلمة المرور</label>
-<input id="loginPass" type="password" class="login-input" placeholder="••••••" autocomplete="current-password" />
-</div>
-<p id="loginErr" class="login-err" hidden>❌ اسم المستخدم أو كلمة المرور غير صحيحة</p>
-<button id="loginBtn" class="btn btn-primary login-btn">
-<span>دخول</span>
-</button>
-</div>
-<p class="login-footer">Sam Soft · WebADB · engine jetoadb-v2</p>
-</div>
+    <div class="login-card">
+        <div class="login-brand">
+            <div class="login-logo">⬡</div>
+            <div>
+                <div class="login-title">Sam Soft</div>
+                <div class="login-sub">مثبّت تطبيقات السيارات</div>
+            </div>
+        </div>
+        <div class="login-divider"></div>
+        <div class="login-fields">
+            <div class="login-field">
+                <label class="login-label">اسم المستخدم</label>
+                <input id="loginUser" type="text" class="login-input" placeholder="username" autocomplete="username" />
+            </div>
+            <div class="login-field">
+                <label class="login-label">كلمة المرور</label>
+                <input id="loginPass" type="password" class="login-input" placeholder="••••••" autocomplete="current-password" />
+            </div>
+            <p id="loginErr" class="login-err" hidden>❌ اسم المستخدم أو كلمة المرور غير صحيحة</p>
+            <button id="loginBtn" class="btn btn-primary login-btn">
+                <span>دخول</span>
+            </button>
+        </div>
+        <p class="login-footer">Sam Soft · WebADB · engine jetoadb-v2</p>
+    </div>
 </div>
 
 <div class="shell">
 
-<!-- Topbar -->
-<header class="topbar">
-<div class="brand">
-<div class="brand-mark">⬡</div>
-<div class="brand-text">
-<span class="brand-name">Sam Soft</span>
-<span class="brand-tagline">مثبّت تطبيقات السيارات</span>
-</div>
-</div>
-<div class="topbar-end">
-<div class="status-pill" id="statusPill">
-<span class="status-dot" id="statusDot"></span>
-<span id="statusLabel">غير متصل</span>
-</div>
-<button id="langToggle" class="lang-toggle">EN</button>
-<button id="logoutBtn" class="logout-btn" title="تسجيل الخروج">⏻</button>
-</div>
-</header>
+        <!-- Topbar -->
+        <header class="topbar">
+            <div class="brand">
+                <div class="brand-mark">⬡</div>
+                <div class="brand-text">
+                    <span class="brand-name">Sam Soft</span>
+                    <span class="brand-tagline">مثبّت تطبيقات السيارات</span>
+                </div>
+            </div>
+            <div class="topbar-end">
+                <div class="status-pill" id="statusPill">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span id="statusLabel">غير متصل</span>
+                </div>
+                <button id="langToggle" class="lang-toggle">EN</button>
+                <button id="logoutBtn" class="logout-btn" title="تسجيل الخروج">⏻</button>
+            </div>
+        </header>
 
-<main class="content">
+        <main class="content">
 
-<!-- ① اختيار السيارة -->
-<section class="panel">
-<span class="field-label" data-i18n="selectModel">اختر سيارتك</span>
+            <!-- ① اختيار السيارة -->
+            <section class="panel">
+                <span class="field-label" data-i18n="selectModel">اختر سيارتك</span>
 
-<!-- hidden select للتوافق مع JS الموجود -->
-<select id="modelSelect" hidden></select>
+                <!-- hidden select للتوافق مع JS الموجود -->
+                <select id="modelSelect" hidden></select>
 
-<div class="car-grid" id="carGrid">
-<!-- تُولَّد بواسطة main.js -->
-</div>
+                <div class="car-grid" id="carGrid">
+                    <!-- تُولَّد بواسطة main.js -->
+                </div>
 
-<!-- اختيار البروتوكول — يظهر بعد اختيار السيارة -->
-<div class="protocol-picker" id="protocolPicker" hidden>
-<p class="protocol-heading">إصدار نظام الشاشة</p>
-<div class="protocol-options" id="protoOpts">
-<!-- تُولَّد بواسطة main.js -->
-</div>
-<p id="modelHint" class="field-hint"></p>
-</div>
-</section>
+                <!-- اختيار البروتوكول — يظهر بعد اختيار السيارة -->
+                <div class="protocol-picker" id="protocolPicker" hidden>
+                    <p class="protocol-heading">إصدار نظام الشاشة</p>
+                    <div class="protocol-options" id="protoOpts">
+                        <!-- تُولَّد بواسطة main.js -->
+                    </div>
+                    <p id="modelHint" class="field-hint"></p>
+                </div>
+            </section>
 
-<!-- ② الاتصال -->
-<section class="panel">
-<div id="deviceInfo" class="device-bar" hidden>
-<span class="device-bar-label" data-i18n="deviceModel">الجهاز المتصل</span>
-<strong id="deviceModelText" class="device-bar-value">—</strong>
-</div>
-<div class="connect-row">
-<button id="connectBtn" class="btn btn-primary" disabled>
-<span class="btn-icon">⚡</span>
-<span data-i18n="connectBtn">اتصال بالجهاز</span>
-</button>
-<button id="disconnectBtn" class="btn btn-ghost" hidden>
-<span data-i18n="disconnectBtn">قطع الاتصال</span>
-</button>
-</div>
-</section>
+            <!-- ② الاتصال -->
+            <section class="panel">
+                <div id="deviceInfo" class="device-bar" hidden>
+                    <span class="device-bar-label" data-i18n="deviceModel">الجهاز المتصل</span>
+                    <strong id="deviceModelText" class="device-bar-value">—</strong>
+                </div>
+                <div class="connect-row">
+                    <button id="connectBtn" class="btn btn-primary" disabled>
+                        <span class="btn-icon">⚡</span>
+                        <span data-i18n="connectBtn">اتصال بالجهاز</span>
+                    </button>
+                    <button id="disconnectBtn" class="btn btn-ghost" hidden>
+                        <span data-i18n="disconnectBtn">قطع الاتصال</span>
+                    </button>
+                </div>
+            </section>
 
-<!-- ③ رفع APK -->
-<section class="panel">
-<span class="field-label" data-i18n="uploadApk">ملفات APK</span>
-<div id="dropZone" class="dropzone">
-<input type="file" id="apkInput" accept=".apk" multiple hidden />
-<div class="dropzone-body">
-<div class="dropzone-icon">⬆</div>
-<p class="dropzone-text" data-i18n="dropText">اسحب ملفات APK هنا أو انقر للاختيار</p>
-<p class="dropzone-hint">.apk files only</p>
-</div>
-</div>
-<ul id="apkList" class="apk-queue"></ul>
-<button id="installBtn" class="btn btn-install" disabled>
-<span data-i18n="installBtn">تثبيت التطبيقات</span>
-</button>
-</section>
+            <!-- ③ رفع APK -->
+            <section class="panel">
+                <span class="field-label" data-i18n="uploadApk">ملفات APK</span>
+                <div id="dropZone" class="dropzone">
+                    <input type="file" id="apkInput" accept=".apk" multiple hidden />
+                    <div class="dropzone-body">
+                        <div class="dropzone-icon">⬆</div>
+                        <p class="dropzone-text" data-i18n="dropText">اسحب ملفات APK هنا أو انقر للاختيار</p>
+                        <p class="dropzone-hint">.apk files only</p>
+                    </div>
+                </div>
+                <ul id="apkList" class="apk-queue"></ul>
+                <button id="installBtn" class="btn btn-install" disabled>
+                    <span data-i18n="installBtn">تثبيت التطبيقات</span>
+                </button>
+            </section>
 
-<!-- ④ إعدادات السيارة -->
-<section class="panel" id="carSettingsCard" hidden>
-<div class="section-head">
-<span class="section-title">⚙️ إعدادات السيارة</span>
-</div>
+            <!-- ④ مكتبة التطبيقات الجاهزة -->
+            <section class="panel" id="appLibraryCard" hidden>
+                <div class="section-head">
+                    <span class="section-title">🏪 مكتبة التطبيقات</span>
+                    <span class="lib-badge">جاهزة للتثبيت</span>
+                </div>
+                <div class="lib-grid" id="libGrid">
+                    <!-- تُولَّد بواسطة main.js -->
+                </div>
+            </section>
 
-<div class="settings-group">
-<div class="settings-group-head">
-<span class="settings-icon">📺</span>
-<div>
-<p class="settings-title">تقسيم الشاشة والنوافذ العائمة</p>
-<p class="settings-desc">تفعيل تشغيل تطبيقين جنباً إلى جنب</p>
-</div>
-</div>
-<div class="settings-actions">
-<button class="btn btn-ghost settings-btn" id="enableSplitBtn">تفعيل تقسيم الشاشة</button>
-<p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة مستقلة</p>
-</div>
-</div>
+            <!-- ⑤ إعدادات السيارة -->
+            <section class="panel" id="carSettingsCard" hidden>
+                <div class="section-head">
+                    <span class="section-title">⚙️ إعدادات السيارة</span>
+                </div>
 
-<div class="settings-divider"></div>
+                <div class="settings-group">
+                    <div class="settings-group-head">
+                        <span class="settings-icon">📺</span>
+                        <div>
+                            <p class="settings-title">تقسيم الشاشة والنوافذ العائمة</p>
+                            <p class="settings-desc">تفعيل تشغيل تطبيقين جنباً إلى جنب</p>
+                        </div>
+                    </div>
+                    <div class="settings-actions">
+                        <button class="btn btn-ghost settings-btn" id="enableSplitBtn">تفعيل تقسيم الشاشة</button>
+                        <p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة مستقلة</p>
+                    </div>
+                </div>
 
-<div class="settings-group">
-<div class="settings-group-head">
-<span class="settings-icon">🎛️</span>
-<div>
-<p class="settings-title">أزرار الدركسون</p>
-<p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه مع التطبيقات</p>
-</div>
-</div>
-<div class="settings-actions">
-<button class="btn btn-ghost settings-btn" id="detectKeysBtn">
-<span id="detectBtnLabel">🔍 كشف أزرار الدركسون (8 ثوانٍ)</span>
-</button>
-<div id="keysResult" class="keys-result" hidden></div>
-</div>
-<p class="settings-sub-title">اختبار يدوي للأزرار</p>
-<div class="media-keys">
-<button class="media-key" data-key="88" title="السابق">⏮</button>
-<button class="media-key" data-key="85" title="تشغيل/إيقاف">⏯</button>
-<button class="media-key" data-key="87" title="التالي">⏭</button>
-<button class="media-key" data-key="24" title="رفع الصوت">🔊</button>
-<button class="media-key" data-key="25" title="خفض الصوت">🔉</button>
-<button class="media-key" data-key="164" title="كتم">🔇</button>
-</div>
-<p class="settings-note">اضغط الأزرار لإرسال أوامر الوسائط مباشرة للجهاز</p>
-</div>
-</section>
+                <div class="settings-divider"></div>
 
-<!-- ⑤ إدارة التطبيقات -->
-<section class="panel" id="appsManagerCard" hidden>
-<div class="section-head">
-<span class="section-title">📱 التطبيقات</span>
-</div>
-<div class="tab-bar">
-<button class="tab-btn active" id="tabUser">
-<span data-i18n="userApps">مُثبَّتة</span>
-<span class="tab-count" id="userAppsCount">0</span>
-</button>
-<button class="tab-btn" id="tabSystem">
-<span data-i18n="systemApps">نظام</span>
-<span class="tab-count" id="systemAppsCount">0</span>
-</button>
-<button class="tab-action" id="refreshAppsBtn">
-<span data-i18n="refresh">🔄 تحديث</span>
-</button>
-</div>
-<div class="apps-list" id="appsList">
-<p class="empty-state" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
-</div>
-</section>
+                <div class="settings-group">
+                    <div class="settings-group-head">
+                        <span class="settings-icon">🎛️</span>
+                        <div>
+                            <p class="settings-title">أزرار الدركسون</p>
+                            <p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه مع التطبيقات</p>
+                        </div>
+                    </div>
+                    <div class="settings-actions">
+                        <button class="btn btn-ghost settings-btn" id="detectKeysBtn">
+                            <span id="detectBtnLabel">🔍 كشف أزرار الدركسون (8 ثوانٍ)</span>
+                        </button>
+                        <div id="keysResult" class="keys-result" hidden></div>
+                    </div>
+                    <p class="settings-sub-title">اختبار يدوي للأزرار</p>
+                    <div class="media-keys">
+                        <button class="media-key" data-key="88" title="السابق">⏮</button>
+                        <button class="media-key" data-key="85" title="تشغيل/إيقاف">⏯</button>
+                        <button class="media-key" data-key="87" title="التالي">⏭</button>
+                        <button class="media-key" data-key="24" title="رفع الصوت">🔊</button>
+                        <button class="media-key" data-key="25" title="خفض الصوت">🔉</button>
+                        <button class="media-key" data-key="164" title="كتم">🔇</button>
+                    </div>
+                    <p class="settings-note">اضغط الأزرار لإرسال أوامر الوسائط مباشرة للجهاز</p>
+                </div>
+            </section>
 
-<!-- ⑥ سجل العمليات -->
-<section class="panel panel-terminal">
-<div class="section-head">
-<span class="section-title" data-i18n="terminal">سجل العمليات</span>
-<button class="clear-btn" onclick="document.getElementById('terminal').innerHTML=''">مسح</button>
-</div>
-<div id="terminal" class="terminal"></div>
-</section>
+            <!-- ⑤ إدارة التطبيقات -->
+            <section class="panel" id="appsManagerCard" hidden>
+                <div class="section-head">
+                    <span class="section-title">📱 التطبيقات</span>
+                </div>
+                <div class="tab-bar">
+                    <button class="tab-btn active" id="tabUser">
+                        <span data-i18n="userApps">مُثبَّتة</span>
+                        <span class="tab-count" id="userAppsCount">0</span>
+                    </button>
+                    <button class="tab-btn" id="tabSystem">
+                        <span data-i18n="systemApps">نظام</span>
+                        <span class="tab-count" id="systemAppsCount">0</span>
+                    </button>
+                    <button class="tab-action" id="refreshAppsBtn">
+                        <span data-i18n="refresh">🔄 تحديث</span>
+                    </button>
+                </div>
+                <div class="apps-list" id="appsList">
+                    <p class="empty-state" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
+                </div>
+            </section>
 
-</main>
+            <!-- ⑥ سجل العمليات -->
+            <section class="panel panel-terminal">
+                <div class="section-head">
+                    <span class="section-title" data-i18n="terminal">سجل العمليات</span>
+                    <button class="clear-btn" onclick="document.getElementById('terminal').innerHTML=''">مسح</button>
+                </div>
+                <div id="terminal" class="terminal"></div>
+            </section>
 
-<!-- Footer -->
-<footer class="site-footer">
-<div class="footer-card">
-<div class="footer-card-head">
-<span class="footer-card-title">المجتمع والدعم</span>
-<span class="footer-card-sub">أسئلة، تقارير أخطاء، واقتراحات — بالعربي والإنجليزي</span>
-</div>
-<a href="https://t.me/sam_f4" target="_blank" rel="noopener" class="footer-tg-btn">
-<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
-التواصل عبر تيليقرام
-</a>
-<div class="footer-btns">
-<a href="https://t.me/sam_f4" target="_blank" class="footer-btn">🐛 الإبلاغ عن مشكلة</a>
-<a href="https://t.me/sam_f4" target="_blank" class="footer-btn">💡 طلب ميزة جديدة</a>
-</div>
-<p class="footer-card-note">
-عند الإبلاغ عن مشكلة، انسخ سجل العمليات من الأعلى وأرفقه — يحوّل المشكلة من تخمين إلى حل
-</p>
-</div>
+        </main>
 
-<p class="footer-privacy">
-المثبت يعمل بالكامل داخل المتصفح عبر WebUSB
-— ملفاتك وبيانات سيارتك لا تغادر جهازك أبداً
-</p>
+        <!-- Footer -->
+        <footer class="site-footer">
+            <div class="footer-card">
+                <div class="footer-card-head">
+                    <span class="footer-card-title">المجتمع والدعم</span>
+                    <span class="footer-card-sub">أسئلة، تقارير أخطاء، واقتراحات — بالعربي والإنجليزي</span>
+                </div>
+                <a href="https://t.me/sam_f4" target="_blank" rel="noopener" class="footer-tg-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+                    التواصل عبر تيليقرام
+                </a>
+                <div class="footer-btns">
+                    <a href="https://t.me/sam_f4" target="_blank" class="footer-btn">🐛 الإبلاغ عن مشكلة</a>
+                    <a href="https://t.me/sam_f4" target="_blank" class="footer-btn">💡 طلب ميزة جديدة</a>
+                </div>
+                <p class="footer-card-note">
+                    عند الإبلاغ عن مشكلة، انسخ سجل العمليات من الأعلى وأرفقه — يحوّل المشكلة من تخمين إلى حل
+                </p>
+            </div>
 
-<div class="footer-meta">
-<span>sam-soft</span>
-<span class="footer-dot">·</span>
-<a href="https://t.me/sam_f4" target="_blank" class="footer-link">@sam_f4</a>
-<span class="footer-dot">·</span>
-<span>engine jetoadb-v2</span>
-<span class="footer-dot">·</span>
-<span>WebUSB · ADB</span>
-</div>
-</footer>
+            <p class="footer-privacy">
+                المثبت يعمل بالكامل داخل المتصفح عبر WebUSB
+                — ملفاتك وبيانات سيارتك لا تغادر جهازك أبداً
+            </p>
 
-</div>
-<script type="module" src="./src/main.js"></script>
+            <div class="footer-meta">
+                <span>sam-soft</span>
+                <span class="footer-dot">·</span>
+                <a href="https://t.me/sam_f4" target="_blank" class="footer-link">@sam_f4</a>
+                <span class="footer-dot">·</span>
+                <span>engine jetoadb-v2</span>
+                <span class="footer-dot">·</span>
+                <span>WebUSB · ADB</span>
+            </div>
+        </footer>
+
+    </div>
+    <script type="module" src="./src/main.js"></script>
 </body>
 </html>
-
