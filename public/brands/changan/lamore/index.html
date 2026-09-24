@@ -1,1 +1,42 @@
-
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تعليمات تثبيت التطبيقات — شانجان لامور</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Space Grotesk', system-ui, sans-serif; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { max-width: 650px; width: 100%; background: #161b22; border: 1px solid #30363d; border-radius: 16px; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #30363d; padding-bottom: 16px; margin-bottom: 20px; }
+        .header-title-box { display: flex; align-items: center; gap: 12px; }
+        .car-header-img { width: 70px; height: 45px; object-fit: contain; }
+        .title { color: #facc15; font-size: 1.3rem; margin: 0; }
+        .back-btn { background: #21262d; color: #58a6ff; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 0.85rem; border: 1px solid #30363d; transition: 0.2s; }
+        .back-btn:hover { background: #30363d; color: #fff; }
+        .step-list { list-style: none; padding: 0; margin: 0; }
+        .step-item { background: #0d1117; border: 1px solid #21262d; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+        .step-num { display: inline-block; background: #238636; color: white; font-weight: bold; border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; font-size: 0.85rem; margin-left: 8px; }
+        .step-title { color: #f0f6fc; font-size: 1rem; font-weight: 600; }
+        .step-desc { margin-top: 8px; color: #8b949e; font-size: 0.9rem; line-height: 1.5; }
+        .alert-box { background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); color: #facc15; padding: 12px; border-radius: 8px; font-size: 0.85rem; margin-top: 16px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="header-title-box">
+            <img src="/assets/images/lamore.webp" alt="Lamore" class="car-header-img" />
+            <h1 class="title">تعليمات شانجان لامور (Lamore)</h1>
+        </div>
+        <a href="/" class="back-btn">⬅ العودة للمثبّت</a>
+    </div>
+    <ul class="step-list">
+        <li class="step-item"><span class="step-num">1</span><span class="step-title">تفعيل ADB</span><p class="step-desc">من النظام -> المعلومات العامة -> اضغط 7 مرات متتالية على رقم الإصدار SW.</p></li>
+        <li class="step-item"><span class="step-num">2</span><span class="step-title">التوصيل</span><p class="step-desc">وصل كيبل البيانات بمنفذ Type-A الرئيسي في السيارة.</p></li>
+        <li class="step-item"><span class="step-num">3</span><span class="step-title">الموافقة</span><p class="step-desc">اضغط اتصال بالمثبت، ثم وافق على نافذة الأذونات الشفافة بالشاشة.</p></li>
+    </ul>
+    <div class="alert-box">💡 <strong>ملاحظة:</strong> الشاشات الرأسية في لامور تعمل بنفس البروتوكول المباشر وتدعم التثبيت السريع.</div>
+</div>
+</body>
+</html>
