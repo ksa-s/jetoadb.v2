@@ -95,6 +95,7 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
+            cursor: pointer;
         }
         .brand-item:hover {
             border-color: #facc15;
@@ -344,70 +345,119 @@
 
     </div>
 
-    <!-- النافذة المنبثقة لاختيار التعليمات حسب الشركة/الطراز -->
+    <!-- النافذة المنبثقة لاختيار الشركة ثم الطراز -->
     <div id="brandsModal" class="modal-overlay" hidden>
         <div class="modal-card">
             <div class="modal-header">
-                <h3 style="margin: 0; font-size: 1.1rem; color: #facc15;">اختر طراز السيارة عرض التعليمات</h3>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <button id="modalBackBtn" class="modal-close" style="font-size: 1.1rem; display: none;" onclick="showBrandsView()" title="رجوع للماركات">←</button>
+                    <h3 id="modalTitle" style="margin: 0; font-size: 1.1rem; color: #facc15;">اختر ماركة السيارة</h3>
+                </div>
                 <button class="modal-close" onclick="toggleBrandsModal()">&times;</button>
             </div>
-            <div class="brands-grid">
-                <!-- Changan Alsvin -->
-                <a href="/brands/changan/alsvin/index.html" class="brand-item">
-                    <span class="brand-icon">🚗</span>
-                    <span>Changan Alsvin</span>
-                    <small style="color: #facc15; font-size: 0.7rem;">متاح الآن</small>
-                </a>
-                <!-- Changan CS35 Plus -->
-                <a href="/brands/changan/cs35-plus/index.html" class="brand-item">
+
+            <!-- 1. قائمة الماركات (الشركات) -->
+            <div id="brandsView" class="brands-grid">
+                <!-- Changan -->
+                <div class="brand-item" onclick="showModelsView('changan')">
                     <span class="brand-icon">🚘</span>
-                    <span>CS35 Plus</span>
-                    <small style="color: #facc15; font-size: 0.7rem;">متاح الآن</small>
-                </a>
-                <!-- Changan CS75 Plus -->
-                <a href="/brands/changan/cs75-plus/index.html" class="brand-item">
-                    <span class="brand-icon">🚙</span>
-                    <span>CS75 Plus</span>
-                    <small style="color: #facc15; font-size: 0.7rem;">متاح الآن</small>
-                </a>
-                <!-- باقي السيارات المتبقية -->
+                    <span>Changan</span>
+                    <small style="color: #facc15; font-size: 0.7rem;">3 طرازات متوفرة</small>
+                </div>
+                <!-- Jetour -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Jetour</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
+                <!-- Geely -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Geely</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
+                <!-- Haval -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Haval</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
+                <!-- Chery -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>Chery</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
+                <!-- MG -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
                     <span class="brand-icon">🚘</span>
                     <span>MG</span>
                     <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
                 </div>
             </div>
+
+            <!-- 2. قائمة الطرازات (تظهر بعد الضغط على إحدى الماركات) -->
+            <div id="modelsView" class="brands-grid" style="display: none;">
+                <!-- طرازات Changan -->
+                <div class="brand-models-group" data-brand="changan" style="display: none; width: 100%; display: contents;">
+                    <a href="/brands/changan/alsvin/index.html" class="brand-item">
+                        <span class="brand-icon">🚗</span>
+                        <span>Alsvin</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+                    <a href="/brands/changan/cs35-plus/index.html" class="brand-item">
+                        <span class="brand-icon">🚘</span>
+                        <span>CS35 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+                    <a href="/brands/changan/cs75-plus/index.html" class="brand-item">
+                        <span class="brand-icon">🚙</span>
+                        <span>CS75 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- السكريبت الخاص بفتح/إغلاق النافذة المنبثقة -->
+    <!-- السكريبت الخاص بإدارة التنقل داخل النافذة المنبثقة -->
     <script>
         function toggleBrandsModal() {
             const modal = document.getElementById('brandsModal');
             if (modal.hasAttribute('hidden')) {
                 modal.removeAttribute('hidden');
+                showBrandsView(); // إظهار قائمة الماركات عند الفتح مجدداً
             } else {
                 modal.setAttribute('hidden', '');
+            }
+        }
+
+        // عرض قائمة الماركات وإخفاء الطرازات
+        function showBrandsView() {
+            document.getElementById('brandsView').style.display = 'grid';
+            document.getElementById('modelsView').style.display = 'none';
+            document.getElementById('modalBackBtn').style.display = 'none';
+            document.getElementById('modalTitle').textContent = 'اختر ماركة السيارة';
+        }
+
+        // عرض طرازات الماركة المحددة
+        function showModelsView(brandKey) {
+            document.getElementById('brandsView').style.display = 'none';
+            document.getElementById('modelsView').style.display = 'grid';
+            document.getElementById('modalBackBtn').style.display = 'inline-block';
+            
+            // إخفاء كل المجموعات ثم إظهار الماركة المحددة
+            const allGroups = document.querySelectorAll('.brand-models-group');
+            allGroups.forEach(group => group.style.display = 'none');
+
+            const selectedGroup = document.querySelector(`.brand-models-group[data-brand="${brandKey}"]`);
+            if (selectedGroup) {
+                selectedGroup.style.display = 'contents';
+            }
+
+            // تغيير العنوان بحسب الماركة
+            if (brandKey === 'changan') {
+                document.getElementById('modalTitle').textContent = 'طرازات Changan';
             }
         }
     </script>
