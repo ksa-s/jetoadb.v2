@@ -1,570 +1,244 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sam Soft — أداة تثبيت التطبيقات</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- تنسيقات مخصصة للزر والنافذة المنبثقة لتعليمات الماركات والصور -->
-    <style>
-        .brands-nav-btn {
-            background: rgba(234, 179, 8, 0.15);
-            color: #facc15;
-            border: 1px solid rgba(234, 179, 8, 0.4);
-            padding: 8px 14px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            text-decoration: none;
-            margin-top: 10px;
-        }
-        .brands-nav-btn:hover {
-            background: rgba(234, 179, 8, 0.25);
-            border-color: #facc15;
-            transform: translateY(-1px);
-        }
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            backdrop-filter: blur(4px);
-        }
-        .modal-overlay[hidden] {
-            display: none !important;
-        }
-        .modal-card {
-            background: #111827;
-            border: 1px solid #374151;
-            border-radius: 16px;
-            width: 90%;
-            max-width: 600px;
-            padding: 24px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-            color: #fff;
-        }
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #1f2937;
-            padding-bottom: 12px;
-            margin-bottom: 16px;
-        }
-        .modal-close {
-            background: transparent;
-            border: none;
-            color: #9ca3af;
-            font-size: 1.5rem;
-            cursor: pointer;
-        }
-        .modal-close:hover { color: #fff; }
-        .brands-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-            gap: 12px;
-            max-height: 60vh;
-            overflow-y: auto;
-            padding: 4px;
-        }
-        .brand-item {
-            background: #1f2937;
-            border: 1px solid #374151;
-            border-radius: 12px;
-            padding: 12px;
-            text-align: center;
-            text-decoration: none;
-            color: #f3f4f6;
-            transition: all 0.2s;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            cursor: pointer;
-        }
-        .brand-item:hover {
-            border-color: #facc15;
-            background: #374151;
-            transform: scale(1.03);
-        }
-        .brand-icon {
-            font-size: 1.8rem;
-        }
-
-        /* تنسيقات صور الشعار والطرازات */
-        .brand-img {
-            width: 60px;
-            height: 60px;
-            object-fit: contain;
-            border-radius: 8px;
-        }
-        .car-img {
-            width: 100px;
-            height: 60px;
-            object-fit: contain;
-            border-radius: 6px;
-        }
-    </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sam Soft — أداة تثبيت التطبيقات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-
-    <!-- ============================================================
-     Login Overlay — يظهر حتى يتم تسجيل الدخول الصحيح
+<!-- ============================================================
+Login Overlay — يظهر حتى يتم تسجيل الدخول الصحيح
 ============================================================ -->
 <div id="loginOverlay" class="login-overlay">
-    <div class="login-card">
-        <div class="login-brand">
-            <div class="login-logo">⬡</div>
-            <div>
-                <div class="login-title">Sam Soft</div>
-                <div class="login-sub">مثبّت تطبيقات السيارات</div>
-            </div>
-        </div>
-        <div class="login-divider"></div>
-        <div class="login-fields">
-            <!-- زر التعليمات داخل بطاقة التسجيل -->
-            <button type="button" class="brands-nav-btn" style="width: 100%; justify-content: center;" onclick="toggleBrandsModal()">
-                ℹ️ تعليمات التوصيل وتثبيت التطبيقات
-            </button>
-
-            <div class="login-field" style="margin-top: 10px;">
-                <label class="login-label">اسم المستخدم</label>
-                <input id="loginUser" type="text" class="login-input" placeholder="username" autocomplete="username" />
-            </div>
-            <div class="login-field">
-                <label class="login-label">كلمة المرور</label>
-                <input id="loginPass" type="password" class="login-input" placeholder="••••••" autocomplete="current-password" />
-            </div>
-            <p id="loginErr" class="login-err" hidden>❌ اسم المستخدم أو كلمة المرور غير صحيحة</p>
-            <button id="loginBtn" class="btn btn-primary login-btn">
-                <span>دخول</span>
-            </button>
-        </div>
-        <p class="login-footer">Sam Soft · WebADB · engine jetoadb-v2</p>
-    </div>
+<div class="login-card">
+<div class="login-brand">
+<div class="login-logo">⬡</div>
+<div>
+<div class="login-title">Sam Soft</div>
+<div class="login-sub">مثبّت تطبيقات السيارات</div>
+</div>
+</div>
+<div class="login-divider"></div>
+<div class="login-fields">
+<div class="login-field">
+<label class="login-label">اسم المستخدم</label>
+<input id="loginUser" type="text" class="login-input" placeholder="username" autocomplete="username" />
+</div>
+<div class="login-field">
+<label class="login-label">كلمة المرور</label>
+<input id="loginPass" type="password" class="login-input" placeholder="••••••" autocomplete="current-password" />
+</div>
+<p id="loginErr" class="login-err" hidden>❌ اسم المستخدم أو كلمة المرور غير صحيحة</p>
+<button id="loginBtn" class="btn btn-primary login-btn">
+<span>دخول</span>
+</button>
+</div>
+<p class="login-footer">Sam Soft · WebADB · engine jetoadb-v2</p>
+</div>
 </div>
 
 <div class="shell">
 
-        <!-- Topbar -->
-        <header class="topbar">
-            <div class="brand">
-                <div class="brand-mark">⬡</div>
-                <div class="brand-text">
-                    <span class="brand-name">Sam Soft</span>
-                    <span class="brand-tagline">مثبّت تطبيقات السيارات</span>
-                </div>
-            </div>
-            <div class="topbar-end">
-                <button type="button" class="brands-nav-btn" onclick="toggleBrandsModal()">
-                    ℹ️ تعليمات التثبيت
-                </button>
-                <div class="status-pill" id="statusPill">
-                    <span class="status-dot" id="statusDot"></span>
-                    <span id="statusLabel">غير متصل</span>
-                </div>
-                <button id="langToggle" class="lang-toggle">EN</button>
-                <button id="logoutBtn" class="logout-btn" title="تسجيل الخروج">⏻</button>
-            </div>
-        </header>
+<!-- Topbar -->
+<header class="topbar">
+<div class="brand">
+<div class="brand-mark">⬡</div>
+<div class="brand-text">
+<span class="brand-name">Sam Soft</span>
+<span class="brand-tagline">مثبّت تطبيقات السيارات</span>
+</div>
+</div>
+<div class="topbar-end">
+<div class="status-pill" id="statusPill">
+<span class="status-dot" id="statusDot"></span>
+<span id="statusLabel">غير متصل</span>
+</div>
+<button id="langToggle" class="lang-toggle">EN</button>
+<button id="logoutBtn" class="logout-btn" title="تسجيل الخروج">⏻</button>
+</div>
+</header>
 
-        <main class="content">
+<main class="content">
 
-            <!-- ① اختيار السيارة -->
-            <section class="panel">
-                <span class="field-label" data-i18n="selectModel">اختر سيارتك</span>
+<!-- ① اختيار السيارة -->
+<section class="panel">
+<span class="field-label" data-i18n="selectModel">اختر سيارتك</span>
 
-                <select id="modelSelect" hidden></select>
+<!-- hidden select للتوافق مع JS الموجود -->
+<select id="modelSelect" hidden></select>
 
-                <div class="car-grid" id="carGrid">
-                    <!-- تُولَّد بواسطة main.js -->
-                </div>
+<div class="car-grid" id="carGrid">
+<!-- تُولَّد بواسطة main.js -->
+</div>
 
-                <div class="protocol-picker" id="protocolPicker" hidden>
-                    <p class="protocol-heading">إصدار نظام الشاشة</p>
-                    <div class="protocol-options" id="protoOpts">
-                        <!-- تُولَّد بواسطة main.js -->
-                    </div>
-                    <p id="modelHint" class="field-hint"></p>
-                </div>
-            </section>
+<!-- اختيار البروتوكول — يظهر بعد اختيار السيارة -->
+<div class="protocol-picker" id="protocolPicker" hidden>
+<p class="protocol-heading">إصدار نظام الشاشة</p>
+<div class="protocol-options" id="protoOpts">
+<!-- تُولَّد بواسطة main.js -->
+</div>
+<p id="modelHint" class="field-hint"></p>
+</div>
+</section>
 
-            <!-- ② الاتصال -->
-            <section class="panel">
-                <div id="deviceInfo" class="device-bar" hidden>
-                    <span class="device-bar-label" data-i18n="deviceModel">الجهاز المتصل</span>
-                    <strong id="deviceModelText" class="device-bar-value">—</strong>
-                </div>
-                <div class="connect-row">
-                    <button id="connectBtn" class="btn btn-primary" disabled>
-                        <span class="btn-icon">⚡</span>
-                        <span data-i18n="connectBtn">اتصال بالجهاز</span>
-                    </button>
-                    <button id="disconnectBtn" class="btn btn-ghost" hidden>
-                        <span data-i18n="disconnectBtn">قطع الاتصال</span>
-                    </button>
-                </div>
-            </section>
+<!-- ② الاتصال -->
+<section class="panel">
+<div id="deviceInfo" class="device-bar" hidden>
+<span class="device-bar-label" data-i18n="deviceModel">الجهاز المتصل</span>
+<strong id="deviceModelText" class="device-bar-value">—</strong>
+</div>
+<div class="connect-row">
+<button id="connectBtn" class="btn btn-primary" disabled>
+<span class="btn-icon">⚡</span>
+<span data-i18n="connectBtn">اتصال بالجهاز</span>
+</button>
+<button id="disconnectBtn" class="btn btn-ghost" hidden>
+<span data-i18n="disconnectBtn">قطع الاتصال</span>
+</button>
+</div>
+</section>
 
-            <!-- ③ رفع APK -->
-            <section class="panel">
-                <span class="field-label" data-i18n="uploadApk">ملفات APK</span>
-                <div id="dropZone" class="dropzone">
-                    <input type="file" id="apkInput" accept=".apk" multiple hidden />
-                    <div class="dropzone-body">
-                        <div class="dropzone-icon">⬆</div>
-                        <p class="dropzone-text" data-i18n="dropText">اسحب ملفات APK هنا أو انقر للاختيار</p>
-                        <p class="dropzone-hint">.apk files only</p>
-                    </div>
-                </div>
-                <ul id="apkList" class="apk-queue"></ul>
-                <button id="installBtn" class="btn btn-install" disabled>
-                    <span data-i18n="installBtn">تثبيت التطبيقات</span>
-                </button>
-            </section>
+<!-- ③ رفع APK -->
+<section class="panel">
+<span class="field-label" data-i18n="uploadApk">ملفات APK</span>
+<div id="dropZone" class="dropzone">
+<input type="file" id="apkInput" accept=".apk" multiple hidden />
+<div class="dropzone-body">
+<div class="dropzone-icon">⬆</div>
+<p class="dropzone-text" data-i18n="dropText">اسحب ملفات APK هنا أو انقر للاختيار</p>
+<p class="dropzone-hint">.apk files only</p>
+</div>
+</div>
+<ul id="apkList" class="apk-queue"></ul>
+<button id="installBtn" class="btn btn-install" disabled>
+<span data-i18n="installBtn">تثبيت التطبيقات</span>
+</button>
+</section>
 
-            <!-- ④ إعدادات السيارة -->
-            <section class="panel" id="carSettingsCard" hidden>
-                <div class="section-head">
-                    <span class="section-title">⚙️ إعدادات السيارة</span>
-                </div>
+<!-- ④ إعدادات السيارة -->
+<section class="panel" id="carSettingsCard" hidden>
+<div class="section-head">
+<span class="section-title">⚙️ إعدادات السيارة</span>
+</div>
 
-                <div class="settings-group">
-                    <div class="settings-group-head">
-                        <span class="settings-icon">📺</span>
-                        <div>
-                            <p class="settings-title">تقسيم الشاشة والنوافذ العائمة</p>
-                            <p class="settings-desc">تفعيل تشغيل تطبيقين جنباً إلى جنب</p>
-                        </div>
-                    </div>
-                    <div class="settings-actions">
-                        <button class="btn btn-ghost settings-btn" id="enableSplitBtn">تفعيل تقسيم الشاشة</button>
-                        <p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة مستقلة</p>
-                    </div>
-                </div>
+<div class="settings-group">
+<div class="settings-group-head">
+<span class="settings-icon">📺</span>
+<div>
+<p class="settings-title">تقسيم الشاشة والنوافذ العائمة</p>
+<p class="settings-desc">تفعيل تشغيل تطبيقين جنباً إلى جنب</p>
+</div>
+</div>
+<div class="settings-actions">
+<button class="btn btn-ghost settings-btn" id="enableSplitBtn">تفعيل تقسيم الشاشة</button>
+<p class="settings-note">بعد التفعيل: استخدم زر "عائم" بجانب أي تطبيق لفتحه في نافذة مستقلة</p>
+</div>
+</div>
 
-                <div class="settings-divider"></div>
+<div class="settings-divider"></div>
 
-                <div class="settings-group">
-                    <div class="settings-group-head">
-                        <span class="settings-icon">🎛️</span>
-                        <div>
-                            <p class="settings-title">أزرار الدركسون</p>
-                            <p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه مع التطبيقات</p>
-                        </div>
-                    </div>
-                    <div class="settings-actions">
-                        <button class="btn btn-ghost settings-btn" id="detectKeysBtn">
-                            <span id="detectBtnLabel">🔍 كشف أزرار الدركسون (8 ثوانٍ)</span>
-                        </button>
-                        <div id="keysResult" class="keys-result" hidden></div>
-                    </div>
-                    <p class="settings-sub-title">اختبار يدوي للأزرار</p>
-                    <div class="media-keys">
-                        <button class="media-key" data-key="88" title="السابق">⏮</button>
-                        <button class="media-key" data-key="85" title="تشغيل/إيقاف">⏯</button>
-                        <button class="media-key" data-key="87" title="التالي">⏭</button>
-                        <button class="media-key" data-key="24" title="رفع الصوت">🔊</button>
-                        <button class="media-key" data-key="25" title="خفض الصوت">🔉</button>
-                        <button class="media-key" data-key="164" title="كتم">🔇</button>
-                    </div>
-                    <p class="settings-note">اضغط الأزرار لإرسال أوامر الوسائط مباشرة للجهاز</p>
-                </div>
-            </section>
+<div class="settings-group">
+<div class="settings-group-head">
+<span class="settings-icon">🎛️</span>
+<div>
+<p class="settings-title">أزرار الدركسون</p>
+<p class="settings-desc">اكتشف ما يُرسله الدركسون وتحقق من توافقه مع التطبيقات</p>
+</div>
+</div>
+<div class="settings-actions">
+<button class="btn btn-ghost settings-btn" id="detectKeysBtn">
+<span id="detectBtnLabel">🔍 كشف أزرار الدركسون (8 ثوانٍ)</span>
+</button>
+<div id="keysResult" class="keys-result" hidden></div>
+</div>
+<p class="settings-sub-title">اختبار يدوي للأزرار</p>
+<div class="media-keys">
+<button class="media-key" data-key="88" title="السابق">⏮</button>
+<button class="media-key" data-key="85" title="تشغيل/إيقاف">⏯</button>
+<button class="media-key" data-key="87" title="التالي">⏭</button>
+<button class="media-key" data-key="24" title="رفع الصوت">🔊</button>
+<button class="media-key" data-key="25" title="خفض الصوت">🔉</button>
+<button class="media-key" data-key="164" title="كتم">🔇</button>
+</div>
+<p class="settings-note">اضغط الأزرار لإرسال أوامر الوسائط مباشرة للجهاز</p>
+</div>
+</section>
 
-            <!-- ⑤ إدارة التطبيقات -->
-            <section class="panel" id="appsManagerCard" hidden>
-                <div class="section-head">
-                    <span class="section-title">📱 التطبيقات</span>
-                </div>
-                <div class="tab-bar">
-                    <button class="tab-btn active" id="tabUser">
-                        <span data-i18n="userApps">مُثبَّتة</span>
-                        <span class="tab-count" id="userAppsCount">0</span>
-                    </button>
-                    <button class="tab-btn" id="tabSystem">
-                        <span data-i18n="systemApps">نظام</span>
-                        <span class="tab-count" id="systemAppsCount">0</span>
-                    </button>
-                    <button class="tab-action" id="refreshAppsBtn">
-                        <span data-i18n="refresh">🔄 تحديث</span>
-                    </button>
-                </div>
-                <div class="apps-list" id="appsList">
-                    <p class="empty-state" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
-                </div>
-            </section>
+<!-- ⑤ إدارة التطبيقات -->
+<section class="panel" id="appsManagerCard" hidden>
+<div class="section-head">
+<span class="section-title">📱 التطبيقات</span>
+</div>
+<div class="tab-bar">
+<button class="tab-btn active" id="tabUser">
+<span data-i18n="userApps">مُثبَّتة</span>
+<span class="tab-count" id="userAppsCount">0</span>
+</button>
+<button class="tab-btn" id="tabSystem">
+<span data-i18n="systemApps">نظام</span>
+<span class="tab-count" id="systemAppsCount">0</span>
+</button>
+<button class="tab-action" id="refreshAppsBtn">
+<span data-i18n="refresh">🔄 تحديث</span>
+</button>
+</div>
+<div class="apps-list" id="appsList">
+<p class="empty-state" data-i18n="loadingApps">جارٍ تحميل التطبيقات...</p>
+</div>
+</section>
 
-            <!-- ⑥ سجل العمليات -->
-            <section class="panel panel-terminal">
-                <div class="section-head">
-                    <span class="section-title" data-i18n="terminal">سجل العمليات</span>
-                    <button class="clear-btn" onclick="document.getElementById('terminal').innerHTML=''">مسح</button>
-                </div>
-                <div id="terminal" class="terminal"></div>
-            </section>
+<!-- ⑥ سجل العمليات -->
+<section class="panel panel-terminal">
+<div class="section-head">
+<span class="section-title" data-i18n="terminal">سجل العمليات</span>
+<button class="clear-btn" onclick="document.getElementById('terminal').innerHTML=''">مسح</button>
+</div>
+<div id="terminal" class="terminal"></div>
+</section>
 
-        </main>
+</main>
 
-        <!-- Footer -->
-        <footer class="site-footer">
-            <div class="footer-card">
-                <div class="footer-card-head">
-                    <span class="footer-card-title">المجتمع والدعم</span>
-                    <span class="footer-card-sub">أسئلة، تقارير أخطاء، واقتراحات — بالعربي والإنجليزي</span>
-                </div>
-                <a href="https://t.me/sam_f4" target="_blank" rel="noopener" class="footer-tg-btn">
-                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
-                    التواصل عبر تيليقرام
-                </a>
-                <div class="footer-btns">
-                    <a href="https://t.me/sam_f4" target="_blank" class="footer-btn">🐛 الإبلاغ عن مشكلة</a>
-                    <a href="https://t.me/sam_f4" target="_blank" class="footer-btn">💡 طلب ميزة جديدة</a>
-                </div>
-                <p class="footer-card-note">
-                    عند الإبلاغ عن مشكلة، انسخ سجل العمليات من الأعلى وأرفقه — يحوّل المشكلة من تخمين إلى حل
-                </p>
-            </div>
+<!-- Footer -->
+<footer class="site-footer">
+<div class="footer-card">
+<div class="footer-card-head">
+<span class="footer-card-title">المجتمع والدعم</span>
+<span class="footer-card-sub">أسئلة، تقارير أخطاء، واقتراحات — بالعربي والإنجليزي</span>
+</div>
+<a href="https://t.me/sam_f4" target="_blank" rel="noopener" class="footer-tg-btn">
+<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.447 1.394c-.16.16-.295.295-.605.295l.213-3.053 5.56-5.023c.242-.213-.054-.333-.373-.12l-6.871 4.326-2.962-.924c-.643-.204-.657-.643.136-.953l11.57-4.461c.537-.194 1.006.131.833.941z"/></svg>
+التواصل عبر تيليقرام
+</a>
+<div class="footer-btns">
+<a href="https://t.me/sam_f4" target="_blank" class="footer-btn">🐛 الإبلاغ عن مشكلة</a>
+<a href="https://t.me/sam_f4" target="_blank" class="footer-btn">💡 طلب ميزة جديدة</a>
+</div>
+<p class="footer-card-note">
+عند الإبلاغ عن مشكلة، انسخ سجل العمليات من الأعلى وأرفقه — يحوّل المشكلة من تخمين إلى حل
+</p>
+</div>
 
-            <p class="footer-privacy">
-                المثبت يعمل بالكامل داخل المتصفح عبر WebUSB
-                — ملفاتك وبيانات سيارتك لا تغادر جهازك أبداً
-            </p>
+<p class="footer-privacy">
+المثبت يعمل بالكامل داخل المتصفح عبر WebUSB
+— ملفاتك وبيانات سيارتك لا تغادر جهازك أبداً
+</p>
 
-            <div class="footer-meta">
-                <span>sam-soft</span>
-                <span class="footer-dot">·</span>
-                <a href="https://t.me/sam_f4" target="_blank" class="footer-link">@sam_f4</a>
-                <span class="footer-dot">·</span>
-                <span>engine jetoadb-v2</span>
-                <span class="footer-dot">·</span>
-                <span>WebUSB · ADB</span>
-            </div>
-        </footer>
+<div class="footer-meta">
+<span>sam-soft</span>
+<span class="footer-dot">·</span>
+<a href="https://t.me/sam_f4" target="_blank" class="footer-link">@sam_f4</a>
+<span class="footer-dot">·</span>
+<span>engine jetoadb-v2</span>
+<span class="footer-dot">·</span>
+<span>WebUSB · ADB</span>
+</div>
+</footer>
 
-    </div>
-
-    <!-- النافذة المنبثقة لاختيار الشركة ثم الطراز -->
-    <div id="brandsModal" class="modal-overlay" hidden>
-        <div class="modal-card">
-            <div class="modal-header">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <button id="modalBackBtn" class="modal-close" style="font-size: 1.1rem; display: none;" onclick="showBrandsView()" title="رجوع للماركات">←</button>
-                    <h3 id="modalTitle" style="margin: 0; font-size: 1.1rem; color: #facc15;">اختر ماركة السيارة</h3>
-                </div>
-                <button class="modal-close" onclick="toggleBrandsModal()">&times;</button>
-            </div>
-
-            <!-- 1. قائمة الماركات (الشركات) -->
-            <div id="brandsView" class="brands-grid">
-                <!-- Changan -->
-                <div class="brand-item" onclick="showModelsView('changan')">
-                    <img src="/assets/images/changan-logo.png" alt="Changan" class="brand-img" />
-                    <span>Changan</span>
-                    <small style="color: #facc15; font-size: 0.7rem;">12 طرازات متوفرة</small>
-                </div>
-                <!-- Jetour -->
-                <div class="brand-item" onclick="showModelsView('jetour')">
-                    <img src="/assets/images/jetour-logo.png" alt="Jetour" class="brand-img" />
-                    <span>Jetour</span>
-                    <small style="color: #facc15; font-size: 0.7rem;">5 طرازات متوفرة</small>
-                </div>
-                <!-- Geely -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
-                    <span>Geely</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
-                </div>
-                <!-- Haval -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
-                    <span>Haval</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
-                </div>
-                <!-- Chery -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
-                    <span>Chery</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
-                </div>
-                <!-- MG -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
-                    <span>MG</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">قريباً</small>
-                </div>
-            </div>
-
-            <!-- 2. قائمة الطرازات (تظهر بعد الضغط على إحدى الماركات) -->
-            <div id="modelsView" class="brands-grid" style="display: none;">
-                <!-- طرازات Changan -->
-                <div class="brand-models-group" data-brand="changan" style="display: none; width: 100%;">
-                    
-                    <a href="/brands/changan/alsvin/index.html" class="brand-item">
-                        <img src="/assets/images/alsvin.webp" alt="Changan Alsvin" class="car-img" />
-                        <span>Alsvin</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/cs35-plus/index.html" class="brand-item">
-                        <img src="/assets/images/cs35-plus.webp" alt="Changan CS35 Plus" class="car-img" />
-                        <span>CS35 Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/cs55-plus/index.html" class="brand-item">
-                        <img src="/assets/images/cs55-plus.webp" alt="Changan CS55 Plus" class="car-img" />
-                        <span>CS55 Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/cs75-plus/index.html" class="brand-item">
-                        <img src="/assets/images/cs75-plus.webp" alt="Changan CS75 Plus" class="car-img" />
-                        <span>CS75 Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/cs85-plus/index.html" class="brand-item">
-                        <img src="/assets/images/cs85-plus.webp" alt="Changan CS85 Plus" class="car-img" />
-                        <span>CS85 Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/cs95/index.html" class="brand-item">
-                        <img src="/assets/images/cs95.webp" alt="Changan CS95" class="car-img" />
-                        <span>CS95</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/eado-plus/index.html" class="brand-item">
-                        <img src="/assets/images/eado-plus.webp" alt="Changan Eado Plus" class="car-img" />
-                        <span>Eado Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/lamore/index.html" class="brand-item">
-                        <img src="/assets/images/lamore.webp" alt="Changan Lamore" class="car-img" />
-                        <span>Lamore</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/uni-k/index.html" class="brand-item">
-                        <img src="/assets/images/uni-k.webp" alt="Changan UNI-K" class="car-img" />
-                        <span>UNI-K</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/uni-t/index.html" class="brand-item">
-                        <img src="/assets/images/uni-t.webp" alt="Changan UNI-T" class="car-img" />
-                        <span>UNI-T</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/changan/uni-v/index.html" class="brand-item">
-                        <img src="/assets/images/uni-v.webp" alt="Changan UNI-V" class="car-img" />
-                        <span>UNI-V</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                </div>
-
-                <!-- طرازات Jetour -->
-                <div class="brand-models-group" data-brand="jetour" style="display: none; width: 100%;">
-                    
-                    <a href="/brands/jetour/dashing/index.html" class="brand-item">
-                        <img src="/assets/images/dashing.webp" alt="Jetour Dashing" class="car-img" />
-                        <span>Dashing</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/jetour/t1/index.html" class="brand-item">
-                        <img src="/assets/images/t1.webp" alt="Jetour T1" class="car-img" />
-                        <span>T1</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/jetour/t2/index.html" class="brand-item">
-                        <img src="/assets/images/t2.webp" alt="Jetour T2" class="car-img" />
-                        <span>T2</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/jetour/x70-plus/index.html" class="brand-item">
-                        <img src="/assets/images/x70-plus.webp" alt="Jetour X70 Plus" class="car-img" />
-                        <span>X70 Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                    <a href="/brands/jetour/x90-plus/index.html" class="brand-item">
-                        <img src="/assets/images/x90-plus.webp" alt="Jetour X90 Plus" class="car-img" />
-                        <span>X90 Plus</span>
-                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-                    </a>
-
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- السكريبت الخاص بإدارة التنقل داخل النافذة المنبثقة -->
-    <script>
-        function toggleBrandsModal() {
-            const modal = document.getElementById('brandsModal');
-            if (modal.hasAttribute('hidden')) {
-                modal.removeAttribute('hidden');
-                showBrandsView(); // إظهار قائمة الماركات عند الفتح مجدداً
-            } else {
-                modal.setAttribute('hidden', '');
-            }
-        }
-
-        // عرض قائمة الماركات وإخفاء الطرازات
-        function showBrandsView() {
-            document.getElementById('brandsView').style.display = 'grid';
-            document.getElementById('modelsView').style.display = 'none';
-            document.getElementById('modalBackBtn').style.display = 'none';
-            document.getElementById('modalTitle').textContent = 'اختر ماركة السيارة';
-        }
-
-        // عرض طرازات الماركة المحددة
-        function showModelsView(brandKey) {
-            document.getElementById('brandsView').style.display = 'none';
-            document.getElementById('modelsView').style.display = 'grid';
-            document.getElementById('modalBackBtn').style.display = 'inline-block';
-            
-            // إخفاء كل المجموعات ثم إظهار الماركة المحددة
-            const allGroups = document.querySelectorAll('.brand-models-group');
-            allGroups.forEach(group => group.style.display = 'none');
-
-            const selectedGroup = document.querySelector(`.brand-models-group[data-brand="${brandKey}"]`);
-            if (selectedGroup) {
-                selectedGroup.style.display = 'contents';
-            }
-
-            // تغيير العنوان بحسب الماركة
-            if (brandKey === 'changan') {
-                document.getElementById('modalTitle').textContent = 'طرازات Changan';
-            } else if (brandKey === 'jetour') {
-                document.getElementById('modalTitle').textContent = 'طرازات Jetour';
-            }
-        }
-    </script>
-
-    <script type="module" src="./src/main.js"></script>
+</div>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
+
