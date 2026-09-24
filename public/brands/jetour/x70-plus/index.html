@@ -1,1 +1,107 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jetour X70 Plus — Активация ADB и инструкция</title>
+    <style>
+        :root {
+            --primary: #1e293b;
+            --accent: #2563eb;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #0f172a;
+            --border: #cbd5e1;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            border: 1px solid var(--border);
+        }
+        h1 {
+            color: var(--primary);
+            margin-top: 0;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 10px;
+        }
+        .code-box {
+            background: #e0e7ff;
+            color: #3730a3;
+            padding: 12px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 1.1rem;
+            font-weight: bold;
+            direction: ltr;
+            display: inline-block;
+            margin: 10px 0;
+        }
+        .alert {
+            background-color: #fffbeeb;
+            border-right: 4px solid #f59e0b;
+            padding: 12px;
+            color: #b45309;
+            margin: 15px 0;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+        .section {
+            background: #f1f5f9;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        ol {
+            padding-right: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 15px;
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <a href="../" class="back-link">← العودة لقائمة طرازات جيتور</a>
+    <h1>جيتور X70 بلس (Jetour X70 Plus)</h1>
+    
+    <p><strong>رمز القائمة الهندسية:</strong></p>
+    <div class="code-box">231215</div>
 
+    <div class="section">
+        <h3>خطوات تفعيل ADB:</h3>
+        <ol>
+            <li>اذهب إلى <strong>الإعدادات ← النظام</strong>، واضغط على "إصدار الشاشة" 6 إلى 7 مرات.</li>
+            <li>ادخل رمز الدخول: <code>231215</code> للوصول لقائمة الصيانة.</li>
+            <li>في القائمة (باللغة الصينية)، اختر الخيار قبل الأخير من الأسفل على اليسار ← ثم اختر <strong>EngineerMode</strong> على اليمين.</li>
+            <li>انتقل إلى <strong>Debug Utility ← Debug level</strong> وغير الخيار من "User" إلى <strong>"CustomerEngineer"</strong>.</li>
+            <li>قم بتفعيل خيار <strong>"DAL"</strong> في قسم DAL Settings.</li>
+            <li>ارجع للخلف، واختر الخيار السادس من الأسفل على اليسار، ثم الخيار الثالث من الأعلى على اليمين؛ وقم بتفعيل مفتاح <strong>ADB</strong>.</li>
+            <li>وصل الشاشة بالكمبيوتر عبر كابل Type-C to USB-A أو USB-A to USB-A، واستخدم أصلات ADB للتثبيت عبر <code>adb install</code>.</li>
+        </ol>
+    </div>
+
+    <div class="alert">
+        <strong>تنبيه هام:</strong> بعض إصدارات برمجيات X70 Plus تكون محمية ضد الكتابة، مما يمنع تثبيت التطبيقات مباشرة حتى الآن وتعتمد على نسختك الحالية.
+    </div>
+</div>
+</body>
+</html>
