@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- تنسيقات مخصصة للزر والنافذة المنبثقة لتعليمات الماركات -->
+    <!-- تنسيقات مخصصة للزر والنافذة المنبثقة لتعليمات الماركات والصور -->
     <style>
         .brands-nav-btn {
             background: rgba(234, 179, 8, 0.15);
@@ -104,6 +104,20 @@
         }
         .brand-icon {
             font-size: 1.8rem;
+        }
+
+        /* تنسيقات صور الشعار والطرازات */
+        .brand-img {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+            border-radius: 8px;
+        }
+        .car-img {
+            width: 100px;
+            height: 60px;
+            object-fit: contain;
+            border-radius: 6px;
         }
     </style>
 </head>
@@ -360,7 +374,7 @@
             <div id="brandsView" class="brands-grid">
                 <!-- Changan -->
                 <div class="brand-item" onclick="showModelsView('changan')">
-                    <span class="brand-icon">🚘</span>
+                    <img src="/assets/images/changan-logo.png" alt="Changan" class="brand-img" />
                     <span>Changan</span>
                     <small style="color: #facc15; font-size: 0.7rem;">3 طرازات متوفرة</small>
                 </div>
@@ -401,17 +415,17 @@
                 <!-- طرازات Changan -->
                 <div class="brand-models-group" data-brand="changan" style="display: none; width: 100%; display: contents;">
                     <a href="/brands/changan/alsvin/index.html" class="brand-item">
-                        <span class="brand-icon">🚗</span>
+                        <img src="/assets/images/alsvin.webp" alt="Changan Alsvin" class="car-img" />
                         <span>Alsvin</span>
                         <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
                     </a>
                     <a href="/brands/changan/cs35-plus/index.html" class="brand-item">
-                        <span class="brand-icon">🚘</span>
+                        <img src="/assets/images/cs35-plus.webp" alt="Changan CS35 Plus" class="car-img" />
                         <span>CS35 Plus</span>
                         <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
                     </a>
                     <a href="/brands/changan/cs75-plus/index.html" class="brand-item">
-                        <span class="brand-icon">🚙</span>
+                        <img src="/assets/images/cs75-plus.webp" alt="Changan CS75 Plus" class="car-img" />
                         <span>CS75 Plus</span>
                         <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
                     </a>
