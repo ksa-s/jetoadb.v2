@@ -379,10 +379,10 @@
                     <small style="color: #facc15; font-size: 0.7rem;">12 طرازات متوفرة</small>
                 </div>
                 <!-- Jetour -->
-                <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
-                    <span class="brand-icon">🚘</span>
+                <div class="brand-item" onclick="showModelsView('jetour')">
+                    <img src="/assets/images/jetour-logo.png" alt="Jetour" class="brand-img" />
                     <span>Jetour</span>
-                    <small style="color: #9ca3af; font-size: 0.7rem;">5 طرازات متوفرة</small>
+                    <small style="color: #facc15; font-size: 0.7rem;">5 طرازات متوفرة</small>
                 </div>
                 <!-- Geely -->
                 <div class="brand-item" style="opacity: 0.5; cursor: not-allowed;" title="قريباً">
@@ -411,79 +411,115 @@
             </div>
 
             <!-- 2. قائمة الطرازات (تظهر بعد الضغط على إحدى الماركات) -->
-<div id="modelsView" class="brands-grid" style="display: none;">
-    <!-- طرازات Changan -->
-    <div class="brand-models-group" data-brand="changan" style="display: none; width: 100%; display: contents;">
-        
-        <a href="/brands/changan/alsvin/index.html" class="brand-item">
-            <img src="/assets/images/alsvin.webp" alt="Changan Alsvin" class="car-img" />
-            <span>Alsvin</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+            <div id="modelsView" class="brands-grid" style="display: none;">
+                <!-- طرازات Changan -->
+                <div class="brand-models-group" data-brand="changan" style="display: none; width: 100%;">
+                    
+                    <a href="/brands/changan/alsvin/index.html" class="brand-item">
+                        <img src="/assets/images/alsvin.webp" alt="Changan Alsvin" class="car-img" />
+                        <span>Alsvin</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/cs35-plus/index.html" class="brand-item">
-            <img src="/assets/images/cs35-plus.webp" alt="Changan CS35 Plus" class="car-img" />
-            <span>CS35 Plus</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/cs35-plus/index.html" class="brand-item">
+                        <img src="/assets/images/cs35-plus.webp" alt="Changan CS35 Plus" class="car-img" />
+                        <span>CS35 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/cs55-plus/index.html" class="brand-item">
-            <img src="/assets/images/cs55-plus.webp" alt="Changan CS55 Plus" class="car-img" />
-            <span>CS55 Plus</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/cs55-plus/index.html" class="brand-item">
+                        <img src="/assets/images/cs55-plus.webp" alt="Changan CS55 Plus" class="car-img" />
+                        <span>CS55 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/cs75-plus/index.html" class="brand-item">
-            <img src="/assets/images/cs75-plus.webp" alt="Changan CS75 Plus" class="car-img" />
-            <span>CS75 Plus</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/cs75-plus/index.html" class="brand-item">
+                        <img src="/assets/images/cs75-plus.webp" alt="Changan CS75 Plus" class="car-img" />
+                        <span>CS75 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/cs85-plus/index.html" class="brand-item">
-            <img src="/assets/images/cs85-plus.webp" alt="Changan CS85 Plus" class="car-img" />
-            <span>CS85 Plus</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/cs85-plus/index.html" class="brand-item">
+                        <img src="/assets/images/cs85-plus.webp" alt="Changan CS85 Plus" class="car-img" />
+                        <span>CS85 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/cs95/index.html" class="brand-item">
-            <img src="/assets/images/cs95.webp" alt="Changan CS95" class="car-img" />
-            <span>CS95</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/cs95/index.html" class="brand-item">
+                        <img src="/assets/images/cs95.webp" alt="Changan CS95" class="car-img" />
+                        <span>CS95</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/eado-plus/index.html" class="brand-item">
-            <img src="/assets/images/eado-plus.webp" alt="Changan Eado Plus" class="car-img" />
-            <span>Eado Plus</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/eado-plus/index.html" class="brand-item">
+                        <img src="/assets/images/eado-plus.webp" alt="Changan Eado Plus" class="car-img" />
+                        <span>Eado Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/lamore/index.html" class="brand-item">
-            <img src="/assets/images/lamore.webp" alt="Changan Lamore" class="car-img" />
-            <span>Lamore</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/lamore/index.html" class="brand-item">
+                        <img src="/assets/images/lamore.webp" alt="Changan Lamore" class="car-img" />
+                        <span>Lamore</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/uni-k/index.html" class="brand-item">
-            <img src="/assets/images/uni-k.webp" alt="Changan UNI-K" class="car-img" />
-            <span>UNI-K</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/uni-k/index.html" class="brand-item">
+                        <img src="/assets/images/uni-k.webp" alt="Changan UNI-K" class="car-img" />
+                        <span>UNI-K</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/uni-t/index.html" class="brand-item">
-            <img src="/assets/images/uni-t.webp" alt="Changan UNI-T" class="car-img" />
-            <span>UNI-T</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/uni-t/index.html" class="brand-item">
+                        <img src="/assets/images/uni-t.webp" alt="Changan UNI-T" class="car-img" />
+                        <span>UNI-T</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
-        <a href="/brands/changan/uni-v/index.html" class="brand-item">
-            <img src="/assets/images/uni-v.webp" alt="Changan UNI-V" class="car-img" />
-            <span>UNI-V</span>
-            <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
-        </a>
+                    <a href="/brands/changan/uni-v/index.html" class="brand-item">
+                        <img src="/assets/images/uni-v.webp" alt="Changan UNI-V" class="car-img" />
+                        <span>UNI-V</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
 
+                </div>
+
+                <!-- طرازات Jetour -->
+                <div class="brand-models-group" data-brand="jetour" style="display: none; width: 100%;">
+                    
+                    <a href="/brands/jetour/dashing/index.html" class="brand-item">
+                        <img src="/assets/images/dashing.webp" alt="Jetour Dashing" class="car-img" />
+                        <span>Dashing</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+
+                    <a href="/brands/jetour/t1/index.html" class="brand-item">
+                        <img src="/assets/images/t1.webp" alt="Jetour T1" class="car-img" />
+                        <span>T1</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+
+                    <a href="/brands/jetour/t2/index.html" class="brand-item">
+                        <img src="/assets/images/t2.webp" alt="Jetour T2" class="car-img" />
+                        <span>T2</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+
+                    <a href="/brands/jetour/x70-plus/index.html" class="brand-item">
+                        <img src="/assets/images/x70-plus.webp" alt="Jetour X70 Plus" class="car-img" />
+                        <span>X70 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+
+                    <a href="/brands/jetour/x90-plus/index.html" class="brand-item">
+                        <img src="/assets/images/x90-plus.webp" alt="Jetour X90 Plus" class="car-img" />
+                        <span>X90 Plus</span>
+                        <small style="color: #facc15; font-size: 0.7rem;">فتح التعليمات</small>
+                    </a>
+
+                </div>
+            </div>
+        </div>
     </div>
-</div>
-
 
     <!-- السكريبت الخاص بإدارة التنقل داخل النافذة المنبثقة -->
     <script>
@@ -523,6 +559,8 @@
             // تغيير العنوان بحسب الماركة
             if (brandKey === 'changan') {
                 document.getElementById('modalTitle').textContent = 'طرازات Changan';
+            } else if (brandKey === 'jetour') {
+                document.getElementById('modalTitle').textContent = 'طرازات Jetour';
             }
         }
     </script>
