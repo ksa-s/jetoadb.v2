@@ -749,7 +749,54 @@ buildCarGrid();
 const GH_REPO = 'ksa-s/jetoadb.v2';
 let ghUrlCache = {};   // filename → direct CDN URL
 
+// ================================================================
+//  حل رابط التحميل — يُحلِّل عند الضغط مع cache
+// ================================================================
+async function resolveDownloadUrl(app) {
+    const filename = app.file.split('/').pop();
+    const key      = filename.toLowerCase();
+
+    // 1. مخزَّن → استخدمه فوراً
+    if (ghUrlCache[key]) {
+        return ghUrlCache[key];
+    }
+
+    // 2. طلب GitHub API لهذا الـ release تحديداً
+    const tagMatch = app.file.match(/releases\/download\/([^\/]+)\//);
+    if (tagMatch) {
+        const tag = tagMatch[1];
+        try {
+            log(`  🔍 جلب رابط CDN للتطبيق...`);
+            const r = await fetch(
+                `https://api.github.com/repos/${GH_REPO}/releases/tags/${encodeURIComponent(tag)}`,
+                { headers: { Accept: 'application/vnd.github.v3+json' } }
+            );
+            if (r.ok) {
+                const json = await r.json();
+                const asset = (json.assets || []).find(a => a.name.toLowerCase() === key);
+                if (asset?.browser_download_url) {
+                    ghUrlCache[key] = asset.browser_download_url;
+                    log(`  ✓ رابط CDN جاهز`, "ok");
+                    return asset.browser_download_url;
+                }
+                // لم يجد الملف — نسجّل الأسماء المتاحة
+                const names = (json.assets || []).map(a => a.name).join(', ');
+                log(`  ⚠ الملفات في Release: [${names}]`, "warn");
+            } else if (r.status === 403) {
+                log(`  ⚠ GitHub API: تجاوز حد الطلبات (60/ساعة)`, "warn");
+            }
+        } catch (e) {
+            log(`  ⚠ GitHub API: ${e.message}`, "warn");
+        }
+    }
+
+    // 3. Fallback (قد يفشل CORS على الموبايل)
+    log(`  ⚠ استخدام الرابط المباشر — قد يفشل CORS`, "warn");
+    return app.file;
+}
+
 async function prefetchGHUrls() {
+    // خلفي — يملأ الـ cache مسبقاً لتسريع التثبيت
     try {
         const r = await fetch(
             `https://api.github.com/repos/${GH_REPO}/releases`,
@@ -757,15 +804,16 @@ async function prefetchGHUrls() {
         );
         if (!r.ok) return;
         const releases = await r.json();
+        let n = 0;
         for (const rel of releases) {
             for (const asset of (rel.assets || [])) {
-                // browser_download_url → objects.githubusercontent.com (CORS مفعّل)
                 ghUrlCache[asset.name.toLowerCase()] = asset.browser_download_url;
+                n++;
             }
         }
-        console.log(`[GH] cached ${Object.keys(ghUrlCache).length} release assets`);
+        console.log(`[GH] prefetched ${n} assets`);
     } catch (e) {
-        console.warn('[GH] API unavailable, will use direct URLs');
+        console.warn('[GH] prefetch failed:', e.message);
     }
 }
 
@@ -894,15 +942,17 @@ async function installLibApp(appId) {
     setStatus("⏳ تحميل...", "loading");
     log(`─── ${app.nameAr} ───`);
 
-    // نحصل على الرابط المباشر من cache أو نعود للـ fallback
+    // نحصل على رابط CDN مباشر (يُحلَّل عند الضغط مع cache)
     const filename = app.file.split('/').pop();
-    const url = ghUrlCache[filename.toLowerCase()] || app.file;
-
     log(`$ fetch ${filename}`, "prompt");
+    const url = await resolveDownloadUrl(app);
 
     try {
         const response = await fetch(url, { mode: 'cors' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            if (response.status === 404) throw new Error(`الملف غير موجود في Release — تحقق من اسم الملف`);
+            throw new Error(`HTTP ${response.status}`);
+        }
 
         const total  = parseInt(response.headers.get('content-length') || '0');
         const reader = response.body.getReader();
